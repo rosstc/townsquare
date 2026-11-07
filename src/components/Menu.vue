@@ -72,7 +72,10 @@
             <template v-if="session.isNight">Switch to Day</template>
             <em>[S]</em>
           </li>
-          <li @click="toggleHiddenVoting" v-if="!session.isSpectator">
+          <li
+            @click="toggleHiddenVoting"
+            v-if="!session.isSpectator && !session.isOneNight"
+          >
             <template v-if="!session.isHiddenVoting">Hide Voting</template>
             <template v-if="session.isHiddenVoting">Show Voting</template>
             <em>[H]</em>
@@ -90,8 +93,7 @@
             @click="togglePointVote"
             v-if="!session.isSpectator && players.length"
           >
-            <template v-if="!session.pointVoteActive">Point Vote</template>
-            <template v-if="session.pointVoteActive">End Point Vote</template>
+            {{ pointVoteLabel }}
             <em>[P]</em>
           </li>
           <li @click="toggleNightOrder" v-if="players.length">
@@ -173,6 +175,12 @@
             <li v-if="!session.isSpectator" @click="distributeRoles">
               Send Characters
               <em><font-awesome-icon icon="theater-masks"/></em>
+            </li>
+            <li v-if="!session.isSpectator" @click="toggleOneNight">
+              <template v-if="!session.isOneNight">
+                Enable One Night Clocktower
+              </template>
+              <template v-else>Disable One Night Clocktower</template>
             </li>
             <li
               v-if="session.voteHistory.length || !session.isSpectator"
@@ -274,12 +282,17 @@
 </template>
 
 <script>
-import { mapMutations, mapState } from "vuex";
+import { mapGetters, mapMutations, mapState } from "vuex";
 
 export default {
   computed: {
     ...mapState(["grimoire", "session", "edition"]),
-    ...mapState("players", ["players"])
+    ...mapState("players", ["players"]),
+    ...mapGetters({ pointVoteName: "session/pointVoteName" }),
+    pointVoteLabel() {
+      const name = this.pointVoteName;
+      return this.session.pointVoteActive ? `End ${name}` : name;
+    }
   },
   data() {
     return {
@@ -317,6 +330,11 @@ export default {
       const popup =
         "Do you want to distribute assigned characters to all SEATED players?";
       if (confirm(popup)) {
+        // One Night: a new game drops the previous game's votes and skulls
+        if (this.session.isOneNight) {
+          this.$store.commit("session/setOneNightVotes", null);
+          this.$store.commit("session/setMarkedPlayer", -1);
+        }
         this.$store.commit("session/distributeRoles", true);
         setTimeout(
           (() => {
@@ -353,6 +371,11 @@ export default {
     },
     leaveSession() {
       if (confirm("Are you sure you want to leave the active live game?")) {
+        // One Night came from the host's game; don't carry it into the next.
+        // Done while still a player, so the ST's saved setting is untouched.
+        if (this.session.isSpectator && this.session.isOneNight) {
+          this.$store.commit("session/toggleOneNight", false);
+        }
         this.$store.commit("session/setSpectator", false);
         this.$store.commit("session/setSessionId", "");
       }
@@ -437,6 +460,37 @@ export default {
         this.$store.commit("session/toggleNight", false);
       }
     },
+    toggleOneNight() {
+      if (this.session.isOneNight) {
+        if (confirm("Are you sure you want to disable One Night Clocktower?")) {
+          // close any vote still running under the One Night rules
+          this.closePointVote();
+          // an unrevealed Secret Point Vote must never reach players once the
+          // mode stops masking it
+          if (!this.session.pointVoteRevealed) {
+            this.$store.commit("session/setPointVotes", {});
+            this.$store.commit("session/setMarkedPlayer", -1);
+          }
+          this.$store.commit("session/toggleOneNight", false);
+        }
+      } else {
+        // start clean: no open vote, and Hide Voting can't be switched off in
+        // the mode (its menu item and [H] are hidden)
+        this.closePointVote();
+        if (this.session.isHiddenVoting) {
+          this.$store.commit("session/toggleHiddenVoting", false);
+        }
+        this.$store.commit("session/toggleOneNight", true);
+      }
+    },
+    closePointVote() {
+      if (this.session.pointVoteActive) {
+        this.$store.commit("session/setPointVoteActive", false);
+      }
+      if (this.session.pointVoteEnded) {
+        this.$store.commit("session/setPointVoteEnded", false);
+      }
+    },
     toggleReturnToTown() {
       //Play the animation for a set duration, along with the audio.
       if (!this.session.isReturnToTown) {
@@ -453,6 +507,10 @@ export default {
         // abort any active nomination before starting point vote
         if (this.session.nomination) {
           this.$store.commit("session/nomination");
+        }
+        // a new Secret Point Vote clears the last one's skulls
+        if (this.session.isOneNight) {
+          this.$store.commit("session/setMarkedPlayer", -1);
         }
         this.$store.commit("session/setPointVoteActive", true);
       }

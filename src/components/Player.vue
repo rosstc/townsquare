@@ -6,7 +6,7 @@
       :class="[
         {
           dead: player.isDead,
-          marked: session.markedPlayer === index,
+          marked: isMarked,
           'no-vote': player.isVoteless,
           you: session.sessionId && player.id && player.id === session.playerId,
           'vote-yes': session.votes[index],
@@ -15,6 +15,8 @@
           'hand-raised': player.handRaised,
           'point-vote-leader': isPointVoteLeader,
           'my-vote-leader': isMyVoteTarget,
+          'my-secret-vote': pointVotesHidden && isMyVoteTarget,
+          'vote-reveal-current': pointVoteRevealCurrent === index,
           'glow-good':
             session.isSpectator &&
             player.id === session.playerId &&
@@ -156,7 +158,10 @@
             session.isSpectator &&
             !isOwnPointVoteHand,
           own:
-            session.pointVoteActive && session.isSpectator && isOwnPointVoteHand
+            session.pointVoteActive &&
+            session.isSpectator &&
+            isOwnPointVoteHand,
+          revealing: pointVoteRevealing
         }"
         :style="{ transform: `rotate(${displayedBearing - 90}deg)` }"
       >
@@ -166,10 +171,17 @@
       <!-- Point Vote tally overlay -->
       <div
         class="point-vote-tally"
-        v-if="session.pointVoteActive && pointVoteTally.length"
+        v-if="showPointVoteTally"
+        :key="pointVoteRevealing ? 'tally-' + pointVoteTally.length : 'tally'"
+        :class="{ pop: pointVoteRevealing }"
       >
         <span class="count">Votes: {{ pointVoteTally.length }}</span>
         <span class="voters">{{ pointVoteTally.join(", ") }}</span>
+      </div>
+
+      <!-- Secret Point Vote: shows that this player has voted, not for whom -->
+      <div class="point-vote-voted" v-if="hasPointVoted" title="Has voted">
+        <font-awesome-icon icon="vote-yea" />
       </div>
 
       <div
@@ -222,7 +234,7 @@
               <font-awesome-icon icon="chair" />
               Empty seat
             </li>
-            <template v-if="!session.nomination">
+            <template v-if="!session.nomination && !session.isOneNight">
               <li @click="nominatePlayer()">
                 <font-awesome-icon icon="hand-point-right" />
                 Nomination
@@ -300,8 +312,25 @@ export default {
     ...mapState(["grimoire", "session"]),
     ...mapGetters({
       nightOrder: "players/nightOrder",
-      pointVoteLeaders: "session/pointVoteLeaders"
+      pointVoteLeaders: "session/pointVoteLeaders",
+      pointVotesHidden: "session/pointVotesHidden",
+      pointVoteVoterIndices: "session/pointVoteVoterIndices",
+      pointVoteRevealing: "session/pointVoteRevealing",
+      pointVoteRevealCurrent: "session/pointVoteRevealCurrent",
+      visiblePointVotes: "session/visiblePointVotes"
     }),
+    isMarked() {
+      const {
+        isOneNight,
+        isSpectator,
+        markedPlayer,
+        markedPlayers
+      } = this.session;
+      if (!isOneNight) return markedPlayer === this.index;
+      // One Night: players see the skulls once the vote reveal has finished
+      if (isSpectator && this.pointVoteRevealing) return false;
+      return markedPlayers.includes(this.index);
+    },
     index: function() {
       return this.players.indexOf(this.player);
     },
@@ -314,12 +343,26 @@ export default {
       return indexAdjusted < session.lockedVote - 1;
     },
     pointVoteTally() {
-      return Object.entries(this.session.pointVotes)
+      return Object.entries(this.visiblePointVotes)
         .filter(([, targetIdx]) => targetIdx === this.index)
         .map(([voterIdx]) =>
           this.players[voterIdx] ? this.players[voterIdx].name : null
         )
         .filter(Boolean);
+    },
+    showPointVoteTally() {
+      if (!this.pointVoteTally.length || this.pointVotesHidden) return false;
+      if (this.session.pointVoteActive) return true;
+      // One Night: tallies stay up after the vote, for the ST and after the reveal
+      return this.session.isOneNight && this.session.pointVoteEnded;
+    },
+    hasPointVoted() {
+      const { isOneNight, pointVoteActive, pointVoteEnded } = this.session;
+      if (!isOneNight) return false;
+      if (!pointVoteActive && !(pointVoteEnded && this.pointVotesHidden)) {
+        return false;
+      }
+      return this.pointVoteVoterIndices.includes(this.index);
     },
     displayedAlignment() {
       if (!this.session.isSpectator) return this.player.alignment || null;
@@ -340,14 +383,17 @@ export default {
     },
     isMyVoteTarget() {
       if (this.myPlayerIndex < 0) return false;
-      return this.session.pointVotes[this.myPlayerIndex] === this.index;
+      return this.visiblePointVotes[this.myPlayerIndex] === this.index;
     },
     pointVoteBearing() {
       if (!this.session.pointVoteActive && !this.session.pointVoteEnded)
         return null;
-      const targetIndex = this.session.pointVotes[this.index];
+      const targetIndex = this.visiblePointVotes[this.index];
       if (targetIndex === undefined || targetIndex === null) return null;
-      if (targetIndex === this.index) return null;
+      if (targetIndex === this.index) {
+        // One Night: the hand sits above the token, so point down at it
+        return this.session.isOneNight ? 180 : null;
+      }
       const n = this.players.length;
       const rotI = (this.index / n) * 2 * Math.PI;
       const rotJ = (targetIndex / n) * 2 * Math.PI;
@@ -406,17 +452,30 @@ export default {
         return;
       }
       if (this.displayedBearing === null) {
+        if (this.pointVoteRevealing) {
+          // One Night reveal: the hand appears pointing up, then swings round
+          this.displayedBearing = 0;
+          setTimeout(() => {
+            if (this.pointVoteBearing !== null) {
+              this.turnHandTo(this.pointVoteBearing);
+            }
+          }, 50);
+          return;
+        }
         // First vote — snap to position with no animation
         this.displayedBearing = newVal;
         return;
       }
-      // Shortest-path delta so the hand always spins the right way
-      let delta = newVal - this.displayedBearing;
-      delta = ((((delta + 180) % 360) + 360) % 360) - 180;
-      this.displayedBearing = this.displayedBearing + delta;
+      this.turnHandTo(newVal);
     }
   },
   methods: {
+    turnHandTo(bearing) {
+      // Shortest-path delta so the hand always spins the right way
+      let delta = bearing - this.displayedBearing;
+      delta = ((((delta + 180) % 360) + 360) % 360) - 180;
+      this.displayedBearing = this.displayedBearing + delta;
+    },
     cycleCurrentAlignment() {
       if (!this.session.isSpectator) {
         this.cycleAlignment();
@@ -1335,6 +1394,17 @@ li.move:not(.from) .player .overlay svg.move {
 }
 
 /***** Point Vote tally *****/
+.player .point-vote-voted {
+  position: absolute;
+  top: 2%;
+  right: 2%;
+  z-index: 6;
+  color: gold;
+  font-size: 120%;
+  filter: drop-shadow(0 0 3px black);
+  pointer-events: none;
+}
+
 .player .point-vote-tally {
   position: absolute;
   bottom: 20%;
@@ -1381,6 +1451,11 @@ li.move:not(.from) .player .overlay svg.move {
   transform-origin: center center;
   transition: transform 300ms ease-out;
 
+  // One Night reveal: a slower, deliberate swing towards the target
+  &.revealing {
+    transition: transform 770ms ease-in-out;
+  }
+
   &.dimmed svg {
     opacity: 0.75;
   }
@@ -1420,7 +1495,9 @@ li.move:not(.from) .player .overlay svg.move {
 
 // Glow ring matches the token circle exactly (same as .alignment-overlay),
 // sits above it at z-index 4 so mix-blend-mode never tints the colour.
-.player.point-vote-leader::after {
+.player.point-vote-leader::after,
+.player.my-secret-vote::after,
+.player.vote-reveal-current::after {
   content: "";
   position: absolute;
   top: 0;
@@ -1433,7 +1510,36 @@ li.move:not(.from) .player .overlay svg.move {
   animation: point-vote-leader-glow 1.2s ease-in-out infinite;
 }
 
-.player.point-vote-leader.my-vote-leader::after {
+.player.point-vote-leader.my-vote-leader::after,
+.player.my-secret-vote::after {
   animation: point-vote-leader-glow-green 1.2s ease-in-out infinite;
+}
+
+/***** One Night vote reveal *****/
+@keyframes vote-reveal-spotlight {
+  0%,
+  100% {
+    box-shadow: 0 0 10px 6px rgba(255, 255, 255, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 26px 12px rgba(255, 255, 255, 0.95);
+  }
+}
+
+.player.vote-reveal-current::after {
+  animation: vote-reveal-spotlight 0.8s ease-in-out infinite;
+}
+
+@keyframes tally-pop {
+  0% {
+    transform: translateX(-50%) scale(1.4);
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+.player .point-vote-tally.pop {
+  animation: tally-pop 450ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 </style>

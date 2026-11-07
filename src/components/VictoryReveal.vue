@@ -6,6 +6,9 @@
           {{ winningTeam === "good" ? "Good Wins!" : "Evil Wins!" }}
         </span>
         <span class="reveal-phase" v-if="!allRevealed">Revealing...</span>
+        <span class="reveal-points-caption" v-if="pointsVisible">
+          Points scored
+        </span>
       </div>
 
       <div class="reveal-particle-layer" aria-hidden="true">
@@ -44,6 +47,13 @@
               v-if="isRevealed(i) && effectiveAlignment(player)"
             ></div>
             <div class="token-shroud" v-if="player.isDead"></div>
+            <div
+              class="points-badge"
+              v-if="pointsVisible && hasPoints(i)"
+              :style="{ animationDelay: pointsDelay(i) }"
+            >
+              +{{ snapshotPoints[i] }}
+            </div>
             <div
               class="true-token-wrap"
               v-if="player.trueRole && isTrueRevealed(i)"
@@ -109,6 +119,11 @@ const TRUE_REVEAL_INTERVAL_MS = 450;
 const FINAL_PAIR_PAUSE_MS = 1000;
 const FINAL_PAIR_SHAKE_MS = 1000;
 const EXTRAS_DELAY_MS = 1200;
+// Fabled/Bluff tokens pop in 350ms apart over 600ms (see bluff-appear)
+const EXTRAS_STAGGER_MS = 350;
+const EXTRAS_ANIMATION_MS = 600;
+const POINTS_DELAY_MS = 1200;
+const POINTS_STAGGER_MS = 250;
 
 export default {
   components: { Token },
@@ -137,6 +152,10 @@ export default {
       const target = this.snapshotPlayers.length - excluded;
       return this.revealedIndices.length >= target && target > 0;
     },
+    snapshotPoints() {
+      const snap = this.session.victoryRevealSnapshot;
+      return snap && snap.points ? snap.points : [];
+    },
     snapshotExtras() {
       const snap = this.session.victoryRevealSnapshot;
       return {
@@ -155,6 +174,7 @@ export default {
       trueRevealOrder: [],
       trueRevealIdx: 0,
       extrasVisible: false,
+      pointsVisible: false,
       finalPairIndices: [],
       finalPairShaking: false,
       finalPairRevealed: false
@@ -165,6 +185,7 @@ export default {
     this.phase2Interval = null;
     this.trueRevealInterval = null;
     this.bluffsTimer = null;
+    this.pointsTimer = null;
     this.finalShakeTimer = null;
     this.finalRevealTimer = null;
   },
@@ -173,6 +194,7 @@ export default {
     clearInterval(this.phase2Interval);
     clearInterval(this.trueRevealInterval);
     clearTimeout(this.bluffsTimer);
+    clearTimeout(this.pointsTimer);
     clearTimeout(this.finalShakeTimer);
     clearTimeout(this.finalRevealTimer);
   },
@@ -218,15 +240,42 @@ export default {
       }, TRUE_REVEAL_INTERVAL_MS);
     },
     scheduleExtras() {
-      if (
-        !this.snapshotExtras.bluffs.length &&
-        !this.snapshotExtras.fabled.length
-      )
+      const { bluffs, fabled } = this.snapshotExtras;
+      if (!bluffs.length && !fabled.length) {
+        // nothing to show — points (One Night) follow the true-role reveal
+        this.schedulePoints(0);
         return;
+      }
       clearTimeout(this.bluffsTimer);
       this.bluffsTimer = setTimeout(() => {
         this.extrasVisible = true;
+        const longest = Math.max(bluffs.length, fabled.length);
+        this.schedulePoints(
+          (longest - 1) * EXTRAS_STAGGER_MS + EXTRAS_ANIMATION_MS
+        );
       }, EXTRAS_DELAY_MS);
+    },
+    /**
+     * One Night: points pop in after every other reveal animation.
+     * @param afterMs time until the previous pop-ins have finished
+     */
+    schedulePoints(afterMs) {
+      if (!this.snapshotPoints.length) return;
+      clearTimeout(this.pointsTimer);
+      this.pointsTimer = setTimeout(() => {
+        this.pointsVisible = true;
+      }, afterMs + POINTS_DELAY_MS);
+    },
+    hasPoints(i) {
+      const points = this.snapshotPoints[i];
+      return points !== undefined && points !== null;
+    },
+    pointsDelay(i) {
+      // stagger in seat order, skipping players without points
+      const position = this.snapshotPoints
+        .slice(0, i)
+        .filter(p => p !== undefined && p !== null).length;
+      return position * POINTS_STAGGER_MS + "ms";
     },
     triggerFinalPair() {
       if (!this.finalPairIndices.length) return;
@@ -249,6 +298,7 @@ export default {
       clearInterval(this.phase2Interval);
       clearInterval(this.trueRevealInterval);
       clearTimeout(this.bluffsTimer);
+      clearTimeout(this.pointsTimer);
       clearTimeout(this.finalShakeTimer);
       clearTimeout(this.finalRevealTimer);
       this.revealedIndices = [];
@@ -257,6 +307,7 @@ export default {
       this.trueRevealOrder = [];
       this.trueRevealIdx = 0;
       this.extrasVisible = false;
+      this.pointsVisible = false;
       const n = this.snapshotPlayers.length;
       // Read Final 3 state from snapshot
       const snap = this.session.victoryRevealSnapshot;
@@ -326,6 +377,7 @@ export default {
       clearInterval(this.phase2Interval);
       clearInterval(this.trueRevealInterval);
       clearTimeout(this.bluffsTimer);
+      clearTimeout(this.pointsTimer);
       clearTimeout(this.finalShakeTimer);
       clearTimeout(this.finalRevealTimer);
       // ST clears reveal from Vuex so new joiners don't inherit a stale reveal state
@@ -619,6 +671,44 @@ export default {
   filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.9));
   pointer-events: none;
   z-index: 4;
+}
+
+.points-badge {
+  position: absolute;
+  right: -8%;
+  bottom: -4%;
+  z-index: 8;
+  min-width: 4.2vh;
+  padding: 0.3vh 0.8vh;
+  border: 2px solid gold;
+  border-radius: 2vh;
+  background: rgba(0, 0, 0, 0.85);
+  color: gold;
+  font-size: 2vh;
+  font-weight: bold;
+  line-height: 1.2;
+  text-align: center;
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+  opacity: 0;
+  animation: points-pop 400ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes points-pop {
+  from {
+    opacity: 0;
+    transform: scale(0);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.reveal-points-caption {
+  color: gold;
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+  animation: name-appear 300ms ease both;
 }
 
 .reveal-name {

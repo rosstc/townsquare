@@ -68,6 +68,10 @@ module.exports = store => {
     store.commit("session/setSpectator", spectator);
     store.commit("session/setSessionId", sessionId);
   }
+  // One Night mode is owned by the ST; players receive it via the gamestate
+  if (localStorage.getItem("oneNight") && !store.state.session.isSpectator) {
+    store.commit("session/toggleOneNight", true);
+  }
 
   // listen to mutations
   store.subscribe(({ type, payload }, state) => {
@@ -181,6 +185,14 @@ module.exports = store => {
           localStorage.setItem("playerId", payload);
         } else {
           localStorage.removeItem("playerId");
+        }
+        break;
+      case "session/toggleOneNight":
+        if (state.session.isSpectator) break;
+        if (state.session.isOneNight) {
+          localStorage.setItem("oneNight", 1);
+        } else {
+          localStorage.removeItem("oneNight");
         }
         break;
     }

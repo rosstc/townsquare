@@ -3,6 +3,11 @@
 - Add a set of emotes that come from a players seated position
 -- probably disable emotes during an active votes/other important activites
 
+### Version 3.1.0
+- Added "One Night Ultimate Clocktower"
+- https://www.botcscripts.com/script/1254/5.2.4
+- Script & ruleset by Ken Cheng, version 5.2.4
+
 ### Version 3.0.3
 - gong overlap higher on z axis, over reminders
 - vote icon over the shroud icon

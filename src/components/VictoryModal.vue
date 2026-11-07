@@ -8,6 +8,15 @@
       <p class="winner-count">
         {{ selectedCount }} winner{{ selectedCount !== 1 ? "s" : "" }} selected
       </p>
+      <p class="scoring-source" v-if="session.isOneNight">
+        {{ scoringSourceText }}
+        <span
+          class="clear-votes"
+          v-if="session.oneNightVotes"
+          @click="clearOneNightVotes"
+          >Clear votes</span
+        >
+      </p>
 
       <div class="player-grid">
         <div
@@ -48,6 +57,12 @@
           <div class="card-team" v-if="player.role && player.role.team">
             {{ player.role.team }}
           </div>
+          <div
+            class="card-points"
+            v-if="points[i] !== undefined && points[i] !== null"
+          >
+            +{{ points[i] }}
+          </div>
         </div>
       </div>
 
@@ -72,6 +87,7 @@
 import { mapState } from "vuex";
 import Token from "./Token.vue";
 import { effectiveAlignment } from "@/utils/alignment";
+import { oneNightPoints, oneNightRevealOrder } from "@/utils/oneNight";
 
 export default {
   components: { Token },
@@ -86,6 +102,23 @@ export default {
     },
     playerTrueRoles() {
       return this.players.map(p => this.trueRoleFor(p));
+    },
+    // One Night: points per player, recalculated as the ST adjusts alignments
+    points() {
+      if (!this.session.isOneNight || !this.team) return [];
+      return oneNightPoints(
+        this.players,
+        this.team,
+        this.session.oneNightVotes
+      );
+    },
+    scoringSourceText() {
+      const votes = this.session.oneNightVotes;
+      if (!votes) return "No vote — non-vote scoring only";
+      const n = Object.keys(votes).length;
+      return `Scoring with the last Secret Point Vote (${n} vote${
+        n !== 1 ? "s" : ""
+      })`;
     }
   },
   data() {
@@ -117,6 +150,9 @@ export default {
         }
         return false;
       });
+    },
+    clearOneNightVotes() {
+      this.$store.commit("session/setOneNightVotes", null);
     },
     toggleWinner(i) {
       this.$set(this.winners, i, !this.winners[i]);
@@ -183,10 +219,10 @@ export default {
           this.$store.getters.rolesJSONbyId.get(r.role);
         if (
           rd &&
-          (
-            (Array.isArray(rd.remindersPersonaGlobal) && rd.remindersPersonaGlobal.includes(r.name)) ||
-            (Array.isArray(rd.remindersPersona) && rd.remindersPersona.includes(r.name))
-          )
+          ((Array.isArray(rd.remindersPersonaGlobal) &&
+            rd.remindersPersonaGlobal.includes(r.name)) ||
+            (Array.isArray(rd.remindersPersona) &&
+              rd.remindersPersona.includes(r.name)))
         ) {
           roleData = rd;
           return true;
@@ -444,10 +480,13 @@ export default {
         trueRole: this.playerTrueRoles[i]
       }));
 
-      const { revealOrder, finalThree, finalPair } = this.buildRevealOrder(
-        snapshotPlayers,
-        team
-      );
+      // One Night: the Demon and everyone executed share the final reveal
+      const oneNightOrder =
+        this.session && this.session.isOneNight
+          ? oneNightRevealOrder(snapshotPlayers)
+          : null;
+      const { revealOrder, finalThree, finalPair } =
+        oneNightOrder || this.buildRevealOrder(snapshotPlayers, team);
 
       const snapshot = {
         players: snapshotPlayers,
@@ -464,7 +503,9 @@ export default {
           .filter(r => r && r.id)
           .map(r => this._serializeRole(r)),
         finalThree,
-        finalPair
+        finalPair,
+        // One Night: points pop in at the end of the reveal
+        ...(this.points && this.points.length ? { points: this.points } : {})
       };
       this.$store.commit("session/setVictoryReveal", snapshot);
       this.close();
@@ -733,6 +774,29 @@ export default {
   font-size: 0.6rem;
   color: rgba(255, 255, 255, 0.4);
   text-transform: capitalize;
+}
+
+.card-points {
+  font-size: 0.8rem;
+  font-weight: bold;
+  color: gold;
+}
+
+.scoring-source {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8rem;
+  margin: 0;
+
+  .clear-votes {
+    margin-left: 8px;
+    cursor: pointer;
+    text-decoration: underline;
+    color: rgba(255, 255, 255, 0.85);
+    &:hover {
+      color: white;
+    }
+  }
 }
 
 .modal-actions {

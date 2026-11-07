@@ -161,6 +161,7 @@ export default {
           break;
         case "h":
           if (this.session.isSpectator) return;
+          if (this.session.isOneNight) return;
           this.$refs.menu.toggleHiddenVoting();
           break;
         case "t":

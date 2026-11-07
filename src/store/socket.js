@@ -1,7 +1,11 @@
 class LiveSession {
   constructor(store) {
-    this._wss = "wss://live.axistownsquare.com:8080/";
-    //this._wss = "ws://localhost:8081/"; // uncomment if using local server with NODE_ENV=development
+    // `npm run serve` (see dev-tools/) uses the local server started with
+    // NODE_ENV=development; production builds use the live server.
+    this._wss =
+      process.env.NODE_ENV === "development"
+        ? "ws://localhost:8081/"
+        : "wss://live.axistownsquare.com:8080/";
     this._socket = null;
     this._isSpectator = true;
     this._gamestate = [];
@@ -197,6 +201,10 @@ class LiveSession {
         if (!this._isSpectator) return;
         this._store.commit("session/toggleReturnToTown", params);
         break;
+      case "isOneNight":
+        if (!this._isSpectator) return;
+        this._store.commit("session/toggleOneNight", params);
+        break;
       case "gameEnded":
         if (!this._isSpectator) return;
         if (params) this._store.commit("session/declareVictory", params);
@@ -243,12 +251,37 @@ class LiveSession {
         if (!this._isSpectator) return;
         this._store.commit("session/setPointVoteActive", params);
         break;
-      case "pointVote":
-        if (!this._store.state.session.pointVoteActive) return;
+      case "pointVote": {
+        const { session } = this._store.state;
+        if (!session.pointVoteActive) return;
+        const hadVoted = session.pointVotes[params.voterIndex] !== undefined;
         this._store.commit("session/castPointVote", params);
+        const hasVoted = session.pointVotes[params.voterIndex] !== undefined;
+        // Secret Point Vote: tell players who has voted, never what they voted.
+        // Only send when someone starts or withdraws a vote, to keep the ST
+        // well under the server's message rate limit.
+        if (!this._isSpectator && session.isOneNight && hadVoted !== hasVoted) {
+          this.syncPointVotes();
+        }
         break;
+      }
       case "pointVotesSync":
         this._store.commit("session/setPointVotes", params || {});
+        break;
+      case "pointVoteVoters":
+        if (!this._isSpectator) return;
+        this._store.commit("session/setPointVoteVoters", params);
+        break;
+      case "pointVoteReveal": {
+        if (!this._isSpectator) return;
+        const { votes, order } = params || {};
+        this._store.commit("session/setPointVotes", votes || {});
+        this._store.commit("session/startPointVoteReveal", order);
+        break;
+      }
+      case "pointVoteRevealSkip":
+        if (!this._isSpectator) return;
+        this._store.commit("session/skipPointVoteReveal");
         break;
       case "pointVoteCountdown":
         if (!this._isSpectator) return;
@@ -317,6 +350,9 @@ class LiveSession {
     const { session } = this._store.state;
     const { fabled } = this._store.state.players;
     if (session.isHiddenVoting && session.nomination) return;
+    // Secret Point Vote: players only learn who has voted until the reveal
+    const pointVotesHidden = session.isOneNight && !session.pointVoteRevealed;
+    const pointVoteVoters = Object.keys(session.pointVotes).map(Number);
     //When Hidden Voting, obscure ghost vote & marked player from the game state update
     if (session.isHiddenVoting) {
       this._gamestate = this._store.state.players.players.map(player => ({
@@ -355,6 +391,7 @@ class LiveSession {
           isNight: session.isNight,
           isHiddenVoting: session.isHiddenVoting,
           isReturnToTown: session.isReturnToTown,
+          isOneNight: session.isOneNight,
           isVoteHistoryAllowed: session.isVoteHistoryAllowed,
           nomination: session.nomination,
           votingSpeed: session.votingSpeed,
@@ -362,8 +399,11 @@ class LiveSession {
           isVoteInProgress: session.isVoteInProgress,
           fabled: fabled.map(f => (f.isCustom ? f : { id: f.id })),
           pointVoteActive: session.pointVoteActive,
-          pointVotes: session.pointVotes,
+          pointVotes: pointVotesHidden ? {} : session.pointVotes,
           pointVoteEnded: session.pointVoteEnded,
+          pointVoteRevealed: session.pointVoteRevealed,
+          pointVoteRevealOrder: session.pointVoteRevealOrder,
+          pointVoteVoters,
           gameEnded: session.gameEnded,
           winningTeam: session.winningTeam,
           victoryCount: session.victoryCount,
@@ -377,16 +417,24 @@ class LiveSession {
           isNight: session.isNight,
           isHiddenVoting: session.isHiddenVoting,
           isReturnToTown: session.isReturnToTown,
+          isOneNight: session.isOneNight,
           isVoteHistoryAllowed: session.isVoteHistoryAllowed,
           nomination: session.nomination,
           votingSpeed: session.votingSpeed,
           lockedVote: session.lockedVote,
           isVoteInProgress: session.isVoteInProgress,
-          markedPlayer: session.markedPlayer,
+          // One Night: the leaders' skulls stay with the ST until the reveal
+          markedPlayer: pointVotesHidden ? -1 : session.markedPlayer,
+          ...(session.isOneNight
+            ? { markedPlayers: pointVotesHidden ? [] : session.markedPlayers }
+            : {}),
           fabled: fabled.map(f => (f.isCustom ? f : { id: f.id })),
           pointVoteActive: session.pointVoteActive,
-          pointVotes: session.pointVotes,
+          pointVotes: pointVotesHidden ? {} : session.pointVotes,
           pointVoteEnded: session.pointVoteEnded,
+          pointVoteRevealed: session.pointVoteRevealed,
+          pointVoteRevealOrder: session.pointVoteRevealOrder,
+          pointVoteVoters,
           gameEnded: session.gameEnded,
           winningTeam: session.winningTeam,
           victoryCount: session.victoryCount,
@@ -411,6 +459,7 @@ class LiveSession {
       isNight,
       isHiddenVoting,
       isReturnToTown,
+      isOneNight,
       isVoteHistoryAllowed,
       nomination,
       votingSpeed,
@@ -418,10 +467,14 @@ class LiveSession {
       lockedVote,
       isVoteInProgress,
       markedPlayer,
+      markedPlayers,
       fabled,
       pointVoteActive,
       pointVotes,
       pointVoteEnded,
+      pointVoteRevealed,
+      pointVoteRevealOrder,
+      pointVoteVoters,
       gameEnded,
       winningTeam,
       victoryCount,
@@ -476,6 +529,7 @@ class LiveSession {
       this._store.commit("session/toggleNight", !!isNight);
       this._store.commit("session/toggleHiddenVoting", !!isHiddenVoting);
       this._store.commit("session/toggleReturnToTown", !!isReturnToTown);
+      this._store.commit("session/toggleOneNight", !!isOneNight);
       this._store.commit("session/setVoteHistoryAllowed", isVoteHistoryAllowed);
       if (!isVoteHistoryAllowed) {
         this._store.commit("session/clearVoteHistory");
@@ -487,16 +541,41 @@ class LiveSession {
         lockedVote,
         isVoteInProgress
       });
-      this._store.commit("session/setMarkedPlayer", markedPlayer);
+      this._store.commit(
+        "session/setMarkedPlayer",
+        isOneNight ? markedPlayers : markedPlayer
+      );
       this._store.commit("players/setFabled", {
         fabled: fabled.map(f => this._store.state.fabled.get(f.id) || f)
       });
+      // In an unrevealed Secret Point Vote the ST sends no votes, so keep
+      // this player's own vote rather than wiping it.
+      const keepOwnVote = !!isOneNight && !pointVoteRevealed;
       if (pointVoteActive) {
-        this._store.commit("session/setPointVoteActive", true);
-        this._store.commit("session/setPointVotes", pointVotes || {});
+        if (!keepOwnVote || !this._store.state.session.pointVoteActive) {
+          this._store.commit("session/setPointVoteActive", true);
+        }
+        if (!keepOwnVote) {
+          this._store.commit("session/setPointVotes", pointVotes || {});
+        }
       } else if (pointVoteEnded) {
-        this._store.commit("session/setPointVotes", pointVotes || {});
+        if (!keepOwnVote) {
+          this._store.commit("session/setPointVotes", pointVotes || {});
+        }
         this._store.commit("session/setPointVoteEnded", true);
+      }
+      this._store.commit("session/setPointVoteVoters", pointVoteVoters);
+      this._store.commit("session/setPointVoteRevealed", !!pointVoteRevealed);
+      // late joiners land on the finished reveal; a reveal already playing
+      // here (e.g. the ST reconnected mid-reveal) carries on undisturbed
+      if (
+        pointVoteRevealed &&
+        !this._store.getters["session/pointVoteRevealing"]
+      ) {
+        this._store.commit(
+          "session/restorePointVoteReveal",
+          pointVoteRevealOrder
+        );
       }
       if (gameEnded && winningTeam) {
         this._store.commit("session/setVictoryCount", victoryCount || 0);
@@ -906,6 +985,14 @@ class LiveSession {
     //this.sendGamestate();
   }
 
+  /**
+   * Send the One Night Clocktower mode status. ST only
+   */
+  setOneNight() {
+    if (this._isSpectator) return;
+    this._send("isOneNight", this._store.state.session.isOneNight);
+  }
+
   sendGameEnded() {
     if (this._isSpectator) return;
     const { gameEnded, winningTeam } = this._store.state.session;
@@ -958,13 +1045,21 @@ class LiveSession {
   }
 
   /**
-   * Set which player is on the block. ST only
-   * @param playerIndex, player id or -1 for empty
+   * Send which player(s) are on the block. ST only
    */
-  setMarked(playerIndex) {
+  setMarked() {
     if (this._isSpectator) return;
-    if (this._store.state.session.isHiddenVoting) return;
-    this._send("marked", playerIndex);
+    const session = this._store.state.session;
+    if (session.isHiddenVoting) return;
+    // One Night: skulls on the top-voted players are for the ST until the
+    // votes are shown; clearing marks is always sent
+    if (!session.isOneNight) {
+      this._send("marked", session.markedPlayer);
+      return;
+    }
+    const marks = session.markedPlayers;
+    if (marks.length && !session.pointVoteRevealed) return;
+    this._send("marked", marks);
   }
 
   /**
@@ -1096,7 +1191,38 @@ class LiveSession {
    */
   syncPointVotes() {
     if (this._isSpectator) return;
-    this._send("pointVotesSync", this._store.state.session.pointVotes);
+    const {
+      pointVotes,
+      isOneNight,
+      pointVoteRevealed
+    } = this._store.state.session;
+    if (isOneNight && !pointVoteRevealed) {
+      this._send("pointVoteVoters", Object.keys(pointVotes).map(Number));
+    } else {
+      this._send("pointVotesSync", pointVotes);
+    }
+  }
+
+  /**
+   * Reveal every Secret Point Vote to the town. ST only.
+   */
+  revealPointVotes() {
+    if (this._isSpectator) return;
+    const { pointVotes, pointVoteRevealOrder } = this._store.state.session;
+    this._send("pointVoteReveal", {
+      votes: pointVotes,
+      order: pointVoteRevealOrder
+    });
+    // the skulls held back until now can be shown to the town
+    this.setMarked();
+  }
+
+  /**
+   * Skip the vote reveal straight to the result for everyone. ST only.
+   */
+  skipPointVoteReveal() {
+    if (this._isSpectator) return;
+    this._send("pointVoteRevealSkip");
   }
 
   /**
@@ -1104,7 +1230,12 @@ class LiveSession {
    * @param payload { voterIndex, targetIndex }
    */
   castPointVote(payload) {
-    this._send("pointVote", payload);
+    // Secret Point Vote: only the ST may see a player's vote
+    if (this._store.state.session.isOneNight) {
+      this._sendDirect("host", "pointVote", payload);
+    } else {
+      this._send("pointVote", payload);
+    }
   }
 
   /**
@@ -1181,6 +1312,9 @@ export default store => {
       case "session/toggleReturnToTown":
         session.setReturnToTown();
         break;
+      case "session/toggleOneNight":
+        session.setOneNight();
+        break;
       case "setEdition":
         session.sendEdition();
         break;
@@ -1188,7 +1322,7 @@ export default store => {
         session.sendFabled();
         break;
       case "session/setMarkedPlayer":
-        session.setMarked(payload);
+        session.setMarked();
         break;
       case "session/setPointVoteActive":
         session.setPointVoteActive();
@@ -1203,6 +1337,12 @@ export default store => {
         break;
       case "session/castPointVoteSync":
         session.castPointVote(payload);
+        break;
+      case "session/startPointVoteReveal":
+        session.revealPointVotes();
+        break;
+      case "session/skipPointVoteReveal":
+        session.skipPointVoteReveal();
         break;
       case "session/setPointVoteCountdown":
         session.setPointVoteCountdown();
@@ -1223,9 +1363,11 @@ export default store => {
         break;
       case "players/swap":
         session.swapPlayer(payload);
+        store.commit("session/swapOneNightVotes", payload);
         break;
       case "players/move":
         session.movePlayer(payload);
+        store.commit("session/moveOneNightVotes", payload);
         break;
       case "players/remove":
         store.commit("session/removePlayerFromPointVotes", payload);
