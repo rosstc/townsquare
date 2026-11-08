@@ -87,7 +87,11 @@
 import { mapState } from "vuex";
 import Token from "./Token.vue";
 import { effectiveAlignment } from "@/utils/alignment";
-import { oneNightPoints, oneNightRevealOrder } from "@/utils/oneNight";
+import {
+  oneNightPoints,
+  oneNightRevealOrder,
+  leaderboardRevealRows
+} from "@/utils/oneNight";
 
 export default {
   components: { Token },
@@ -150,6 +154,19 @@ export default {
         }
         return false;
       });
+    },
+    /**
+     * This game's points keyed by each player's browser, for the leaderboard.
+     * Unclaimed seats and players without an alignment don't score.
+     */
+    leaderboardScores() {
+      const scores = {};
+      this.players.forEach((player, i) => {
+        const points = this.points[i];
+        if (!player.id || points === null || points === undefined) return;
+        scores[player.id] = { name: player.name, points };
+      });
+      return scores;
     },
     clearOneNightVotes() {
       this.$store.commit("session/setOneNightVotes", null);
@@ -507,6 +524,21 @@ export default {
         // One Night: points pop in at the end of the reveal
         ...(this.points && this.points.length ? { points: this.points } : {})
       };
+      // One Night: bank this game's points on the session leaderboard
+      if (this.session && this.session.isOneNight && this.points.length) {
+        const scores = this.leaderboardScores();
+        // nobody seated (e.g. an offline test): nothing to record
+        if (Object.keys(scores).length) {
+          this.$store.commit("leaderboard/bankGame", {
+            winningTeam: team,
+            scores,
+            time: Date.now()
+          });
+          // the reveal animates from the old standings to the new ones
+          const { games, currentGameId } = this.$store.state.leaderboard;
+          snapshot.leaderboard = leaderboardRevealRows(games, currentGameId);
+        }
+      }
       this.$store.commit("session/setVictoryReveal", snapshot);
       this.close();
     },

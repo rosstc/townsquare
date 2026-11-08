@@ -72,6 +72,20 @@ module.exports = store => {
   if (localStorage.getItem("oneNight") && !store.state.session.isSpectator) {
     store.commit("session/toggleOneNight", true);
   }
+  // the One Night session leaderboard also belongs to the ST
+  if (localStorage.getItem("leaderboard") && !store.state.session.isSpectator) {
+    store.commit("leaderboard/set", JSON.parse(localStorage.leaderboard));
+  }
+  // players keep a copy of it for the session, in case the host is lost
+  if (
+    localStorage.getItem("leaderboardCopy") &&
+    store.state.session.isSpectator
+  ) {
+    const { sessionId, board } = JSON.parse(localStorage.leaderboardCopy);
+    if (sessionId === store.state.session.sessionId) {
+      store.commit("leaderboard/setCopy", board);
+    }
+  }
 
   // listen to mutations
   store.subscribe(({ type, payload }, state) => {
@@ -186,6 +200,27 @@ module.exports = store => {
         } else {
           localStorage.removeItem("playerId");
         }
+        break;
+      case "leaderboard/startGame":
+      case "leaderboard/bankGame":
+      case "leaderboard/removeGame":
+      case "leaderboard/reset":
+      case "leaderboard/set":
+        if (state.session.isSpectator) break;
+        localStorage.setItem(
+          "leaderboard",
+          JSON.stringify(store.getters["leaderboard/board"])
+        );
+        break;
+      case "leaderboard/receive":
+        if (!state.session.isSpectator || !state.leaderboard.copy) break;
+        localStorage.setItem(
+          "leaderboardCopy",
+          JSON.stringify({
+            sessionId: state.session.sessionId,
+            board: state.leaderboard.copy
+          })
+        );
         break;
       case "session/toggleOneNight":
         if (state.session.isSpectator) break;

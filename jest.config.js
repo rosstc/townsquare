@@ -1,6 +1,8 @@
 module.exports = {
   testEnvironment: "jsdom",
   testMatch: ["**/tests/unit/**/*.spec.js"],
+  // lets components import siblings without the .vue extension
+  moduleFileExtensions: ["js", "json", "vue"],
   transform: {
     "^.+\\.vue$": "<rootDir>/tests/vueTransform.js",
     "^.+\\.js$": "babel-jest"

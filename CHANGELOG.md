@@ -3,6 +3,9 @@
 - Add a set of emotes that come from a players seated position
 -- probably disable emotes during an active votes/other important activites
 
+### Version 3.1.1
+- Added robust scoring system for One Night Ultimate Clocktower.
+
 ### Version 3.1.0
 - Added "One Night Ultimate Clocktower"
 - https://www.botcscripts.com/script/1254/5.2.4

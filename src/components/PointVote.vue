@@ -15,7 +15,11 @@
           <div class="button" @click="skipReveal">Skip</div>
         </div>
       </div>
-      <div class="overlay results" v-else>
+      <div
+        class="overlay results"
+        v-else
+        :class="{ compact: session.isOneNight }"
+      >
         <em class="title">{{ voteName }} Result</em>
         <br />
         <template v-if="votesHidden">
@@ -26,7 +30,8 @@
         <template v-else-if="leaders.length === 0">
           <span class="summary">No votes were cast.</span>
         </template>
-        <template v-else>
+        <!-- One Night: once shown, the ST reads the tallies on the tokens -->
+        <template v-else-if="!stShownVotes">
           <div
             class="result-entry"
             v-for="leaderIdx in leaders"
@@ -44,15 +49,15 @@
           </div>
         </template>
         <template v-if="!session.isSpectator && session.isOneNight">
-          <span class="suggestion" :class="suggestedTeam">
-            {{ suggestionText }}
-          </span>
           <div class="button-group" v-if="!session.pointVoteRevealed">
             <div class="button townsfolk" @click="revealVotes">Show Votes</div>
             <div class="button demon" @click="closeResults">Close</div>
           </div>
           <template v-else>
-            <div class="button-group">
+            <span class="suggestion" :class="suggestedTeam">
+              {{ suggestionText }}
+            </span>
+            <div class="button-group small">
               <div
                 class="button"
                 :class="{ disabled: leadersExecuted }"
@@ -63,7 +68,7 @@
               </div>
               <div class="button demon" @click="closeResults">Close</div>
             </div>
-            <div class="button-group">
+            <div class="button-group small">
               <div class="button townsfolk" @click="openVictory('good')">
                 Good Wins
               </div>
@@ -174,6 +179,14 @@ export default {
       const count = this.leaderVoteCount;
       return `Highest Vote is for player ${names}. Vote Tally ${count}`;
     },
+    // One Night: the ST has shown the votes to the town
+    stShownVotes() {
+      return (
+        !this.session.isSpectator &&
+        this.session.isOneNight &&
+        this.session.pointVoteRevealed
+      );
+    },
     suggestedTeam() {
       return suggestedWinner(this.players, this.leaders);
     },
@@ -217,8 +230,10 @@ export default {
               this.session.pointVotes
             );
           }
-          this.$store.commit("session/setPointVoteActive", false);
+          // Show the results before closing the vote: players get these as two
+          // messages, and closing first briefly hides the panel in between.
           this.$store.commit("session/setPointVoteEnded", true);
+          this.$store.commit("session/setPointVoteActive", false);
           // One Night: skull every player about to be executed, ties included.
           // Players only see these once the ST shows the votes.
           if (this.session.isOneNight && this.leaders.length) {
@@ -370,6 +385,15 @@ export default {
     flex-direction: column;
     align-items: center;
     margin-bottom: 4px;
+  }
+
+  // One Night: everyone votes, so leave room for long voter lists
+  &.compact .result-entry {
+    font-size: 68%;
+  }
+
+  .button-group.small {
+    font-size: 80%;
   }
 
   .result-name {

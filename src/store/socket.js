@@ -1,4 +1,5 @@
-class LiveSession {
+// exported for unit tests; the app uses the default export below
+export class LiveSession {
   constructor(store) {
     // `npm run serve` (see dev-tools/) uses the local server started with
     // NODE_ENV=development; production builds use the live server.
@@ -279,6 +280,17 @@ class LiveSession {
         this._store.commit("session/startPointVoteReveal", order);
         break;
       }
+      case "leaderboard":
+        if (!this._isSpectator) return;
+        this._store.commit("leaderboard/receive", params);
+        break;
+      case "leaderboardRequest":
+        this._sendLeaderboardCopy();
+        break;
+      case "leaderboardCopy":
+        if (this._isSpectator) return;
+        this._store.commit("leaderboard/addRecovered", params);
+        break;
       case "pointVoteRevealSkip":
         if (!this._isSpectator) return;
         this._store.commit("session/skipPointVoteReveal");
@@ -403,6 +415,9 @@ class LiveSession {
           pointVoteEnded: session.pointVoteEnded,
           pointVoteRevealed: session.pointVoteRevealed,
           pointVoteRevealOrder: session.pointVoteRevealOrder,
+          ...(session.isOneNight
+            ? { leaderboard: this._store.getters["leaderboard/board"] }
+            : {}),
           pointVoteVoters,
           gameEnded: session.gameEnded,
           winningTeam: session.winningTeam,
@@ -434,6 +449,9 @@ class LiveSession {
           pointVoteEnded: session.pointVoteEnded,
           pointVoteRevealed: session.pointVoteRevealed,
           pointVoteRevealOrder: session.pointVoteRevealOrder,
+          ...(session.isOneNight
+            ? { leaderboard: this._store.getters["leaderboard/board"] }
+            : {}),
           pointVoteVoters,
           gameEnded: session.gameEnded,
           winningTeam: session.winningTeam,
@@ -475,6 +493,7 @@ class LiveSession {
       pointVoteRevealed,
       pointVoteRevealOrder,
       pointVoteVoters,
+      leaderboard,
       gameEnded,
       winningTeam,
       victoryCount,
@@ -551,18 +570,29 @@ class LiveSession {
       // In an unrevealed Secret Point Vote the ST sends no votes, so keep
       // this player's own vote rather than wiping it.
       const keepOwnVote = !!isOneNight && !pointVoteRevealed;
+      const local = this._store.state.session;
       if (pointVoteActive) {
-        if (!keepOwnVote || !this._store.state.session.pointVoteActive) {
+        if (!keepOwnVote || !local.pointVoteActive) {
           this._store.commit("session/setPointVoteActive", true);
         }
         if (!keepOwnVote) {
           this._store.commit("session/setPointVotes", pointVotes || {});
         }
-      } else if (pointVoteEnded) {
-        if (!keepOwnVote) {
-          this._store.commit("session/setPointVotes", pointVotes || {});
+      } else {
+        // The ST's state is authoritative: a vote this client still has open
+        // (missed close message, ST refresh, server restart, or a previous
+        // session in the same tab) must not survive the sync.
+        if (local.pointVoteActive) {
+          this._store.commit("session/setPointVoteActive", false);
         }
-        this._store.commit("session/setPointVoteEnded", true);
+        if (pointVoteEnded) {
+          if (!keepOwnVote) {
+            this._store.commit("session/setPointVotes", pointVotes || {});
+          }
+          this._store.commit("session/setPointVoteEnded", true);
+        } else if (local.pointVoteEnded) {
+          this._store.commit("session/setPointVoteEnded", false);
+        }
       }
       this._store.commit("session/setPointVoteVoters", pointVoteVoters);
       this._store.commit("session/setPointVoteRevealed", !!pointVoteRevealed);
@@ -576,6 +606,9 @@ class LiveSession {
           "session/restorePointVoteReveal",
           pointVoteRevealOrder
         );
+      }
+      if (leaderboard) {
+        this._store.commit("leaderboard/receive", leaderboard);
       }
       if (gameEnded && winningTeam) {
         this._store.commit("session/setVictoryCount", victoryCount || 0);
@@ -1218,6 +1251,41 @@ class LiveSession {
   }
 
   /**
+   * Send the One Night session leaderboard to every player. ST only.
+   */
+  sendLeaderboard() {
+    if (this._isSpectator) return;
+    if (!this._store.state.session.isOneNight) return;
+    this._send("leaderboard", this._store.getters["leaderboard/board"]);
+  }
+
+  /**
+   * Recover scores: ask every player for their saved copy. ST only.
+   */
+  requestLeaderboardCopies() {
+    if (this._isSpectator) return;
+    this._send("leaderboardRequest");
+  }
+
+  /**
+   * Answer Recover scores with this player's saved copy, if they have one.
+   * @private
+   */
+  _sendLeaderboardCopy() {
+    if (!this._isSpectator) return;
+    const { copy } = this._store.state.leaderboard;
+    if (!copy || !copy.games.length) return;
+    const { playerId } = this._store.state.session;
+    const seat = this._store.state.players.players.find(
+      player => player.id === playerId
+    );
+    this._sendDirect("host", "leaderboardCopy", {
+      name: (seat && seat.name) || "A player",
+      board: copy
+    });
+  }
+
+  /**
    * Skip the vote reveal straight to the result for everyone. ST only.
    */
   skipPointVoteReveal() {
@@ -1314,6 +1382,18 @@ export default store => {
         break;
       case "session/toggleOneNight":
         session.setOneNight();
+        // players joining the mode see the session's scores straight away
+        session.sendLeaderboard();
+        break;
+      case "leaderboard/startGame":
+      case "leaderboard/bankGame":
+      case "leaderboard/removeGame":
+      case "leaderboard/reset":
+      case "leaderboard/set":
+        session.sendLeaderboard();
+        break;
+      case "leaderboard/requestCopies":
+        session.requestLeaderboardCopies();
         break;
       case "setEdition":
         session.sendEdition();

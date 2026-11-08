@@ -147,3 +147,98 @@ export function clockwiseVoteRevealOrder(players, votes) {
     .map((player, i) => i)
     .filter(i => players[i].id || votes[i] !== undefined);
 }
+
+/** One Night Clocktower rules, shown on the Night Order sheet. */
+export const ONE_NIGHT_RULES = [
+  "There is only one night and one day.",
+  "Good wins immediately if an evil Minion or Demon dies.",
+  "Evil wins after Day 1.",
+  "No private chats & no nominations.",
+  "At the end of Day 1, everyone secretly votes for one player (can be themselves).",
+  "The player with the most votes is executed. In a tie, all players with tied votes against them are executed.",
+  "If both teams would win at once, good wins.",
+  "There is always 1 Outsider (before any setup changes)."
+];
+
+/**
+ * Scoring rules by winning team, as shown to players. Must match
+ * oneNightPoints (a test keeps them in step). Unlisted players score 0.
+ */
+export const ONE_NIGHT_SCORING = {
+  evil: [
+    { points: 3, who: "Every evil player" },
+    { points: 1, who: "Good players who voted for an evil player" }
+  ],
+  good: [
+    { points: 3, who: "Good players who voted for an evil player" },
+    { points: 1, who: "Every other good player" }
+  ]
+};
+
+/**
+ * Running totals for the session leaderboard, highest first.
+ * Tied players share a rank (1, 1, 3); ties are listed by name. Each player
+ * shows the most recent name they played under.
+ *
+ * @param games leaderboard games ({ id, scores: { [playerId]: { name, points } } })
+ * @returns {Array<{ id: string, name: string, total: number, games: number, rank: number }>}
+ */
+export function leaderboardStandings(games) {
+  const byPlayer = {};
+  [...games]
+    .sort((a, b) => a.id - b.id)
+    .forEach(game => {
+      Object.entries(game.scores).forEach(([id, { name, points }]) => {
+        if (!byPlayer[id]) byPlayer[id] = { id, name, total: 0, games: 0 };
+        const row = byPlayer[id];
+        row.name = name;
+        row.total += points;
+        row.games++;
+      });
+    });
+  const rows = Object.values(byPlayer).sort(
+    (a, b) => b.total - a.total || String(a.name).localeCompare(b.name)
+  );
+  rows.forEach((row, i) => {
+    const previous = rows[i - 1];
+    row.rank = previous && previous.total === row.total ? previous.rank : i + 1;
+  });
+  return rows;
+}
+
+/**
+ * Leaderboard rows for the Grimoire Reveal: each player's total before this
+ * game, what they gained in it, and their new total, with a rank for both.
+ * Rows come ordered by the new standings.
+ *
+ * @param games leaderboard games, including the game just revealed
+ * @param gameId the game just revealed
+ */
+export function leaderboardRevealRows(games, gameId) {
+  const after = leaderboardStandings(games);
+  const before = leaderboardStandings(games.filter(g => g.id !== gameId));
+  const current = games.find(g => g.id === gameId);
+  const rows = after.map(row => {
+    const was = before.find(b => b.id === row.id);
+    const scored = current && current.scores[row.id];
+    return {
+      id: row.id,
+      name: row.name,
+      before: was ? was.total : 0,
+      gained: scored ? scored.points : 0,
+      total: row.total,
+      rank: row.rank
+    };
+  });
+  // rank the earlier standings too, new players included at 0
+  [...rows]
+    .sort((a, b) => b.before - a.before || String(a.name).localeCompare(b.name))
+    .forEach((row, i, sorted) => {
+      const previous = sorted[i - 1];
+      row.beforeRank =
+        previous && previous.before === row.before
+          ? previous.beforeRank
+          : i + 1;
+    });
+  return rows;
+}

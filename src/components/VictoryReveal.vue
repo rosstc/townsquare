@@ -73,6 +73,47 @@
         </div>
       </div>
 
+      <!-- One Night: the right-hand column, scoring rules then leaderboard -->
+      <div v-if="pointsVisible" class="reveal-side">
+        <div class="points-rules-section">
+          <h3>Scoring</h3>
+          <div
+            v-for="(team, t) in ['evil', 'good']"
+            :key="team"
+            class="points-rules"
+            :class="[team, { active: team === winningTeam }]"
+            :style="{ animationDelay: t * 350 + 'ms' }"
+          >
+            <strong>{{ team === "good" ? "Good wins" : "Evil wins" }}</strong>
+            <ul>
+              <li v-for="line in oneNightScoring[team]" :key="line.who">
+                <span class="points">+{{ line.points }}</span> {{ line.who }}
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div v-if="leaderboardPhase" class="leaderboard-section">
+          <h3>Leaderboard</h3>
+          <transition-group
+            tag="ol"
+            name="leaderboard-row"
+            class="leaderboard-rows"
+          >
+            <li v-for="row in leaderboardRows" :key="row.id">
+              <span class="rank">{{ shownRank(row) }}</span>
+              <span class="name">{{ row.name }}</span>
+              <span
+                class="gained"
+                :class="{ shown: leaderboardPhase >= 2, zero: !row.gained }"
+                >+{{ row.gained }}</span
+              >
+              <span class="total">{{ leaderboardTotals[row.id] }}</span>
+            </li>
+          </transition-group>
+        </div>
+      </div>
+
       <div
         v-if="extrasVisible && snapshotExtras.fabled.length"
         class="fabled-section"
@@ -112,6 +153,7 @@
 import { mapState } from "vuex";
 import Token from "./Token.vue";
 import { effectiveAlignment } from "@/utils/alignment";
+import { ONE_NIGHT_SCORING } from "@/utils/oneNight";
 
 const PHASE1_DELAY_MS = 1000;
 const MAIN_REVEAL_INTERVAL_MS = 650;
@@ -124,6 +166,20 @@ const EXTRAS_STAGGER_MS = 350;
 const EXTRAS_ANIMATION_MS = 600;
 const POINTS_DELAY_MS = 1200;
 const POINTS_STAGGER_MS = 250;
+// One Night leaderboard: old standings, then +N and count up, then new order
+const LEADERBOARD_DELAY_MS = 800;
+const LEADERBOARD_GAIN_DELAY_MS = 1200;
+const LEADERBOARD_COUNT_MS = 900;
+const LEADERBOARD_COUNT_STEPS = 15;
+const LEADERBOARD_REORDER_DELAY_MS = 500;
+
+const totalsAt = (rows, progress) =>
+  rows.reduce((totals, row) => {
+    totals[row.id] = Math.round(
+      row.before + (row.total - row.before) * progress
+    );
+    return totals;
+  }, {});
 
 export default {
   components: { Token },
@@ -152,6 +208,17 @@ export default {
       const target = this.snapshotPlayers.length - excluded;
       return this.revealedIndices.length >= target && target > 0;
     },
+    snapshotLeaderboard() {
+      const snap = this.session.victoryRevealSnapshot;
+      return snap && snap.leaderboard ? snap.leaderboard : [];
+    },
+    // the old order until the totals have counted up, then the new order
+    leaderboardRows() {
+      const key = this.leaderboardPhase < 3 ? "beforeRank" : "rank";
+      return [...this.snapshotLeaderboard].sort(
+        (a, b) => a[key] - b[key] || String(a.name).localeCompare(b.name)
+      );
+    },
     snapshotPoints() {
       const snap = this.session.victoryRevealSnapshot;
       return snap && snap.points ? snap.points : [];
@@ -175,6 +242,10 @@ export default {
       trueRevealIdx: 0,
       extrasVisible: false,
       pointsVisible: false,
+      oneNightScoring: ONE_NIGHT_SCORING,
+      // 0 hidden, 1 old standings, 2 points added, 3 new order
+      leaderboardPhase: 0,
+      leaderboardTotals: {},
       finalPairIndices: [],
       finalPairShaking: false,
       finalPairRevealed: false
@@ -186,6 +257,7 @@ export default {
     this.trueRevealInterval = null;
     this.bluffsTimer = null;
     this.pointsTimer = null;
+    this.leaderboardTimers = [];
     this.finalShakeTimer = null;
     this.finalRevealTimer = null;
   },
@@ -195,6 +267,7 @@ export default {
     clearInterval(this.trueRevealInterval);
     clearTimeout(this.bluffsTimer);
     clearTimeout(this.pointsTimer);
+    this.clearLeaderboardTimers();
     clearTimeout(this.finalShakeTimer);
     clearTimeout(this.finalRevealTimer);
   },
@@ -264,7 +337,55 @@ export default {
       clearTimeout(this.pointsTimer);
       this.pointsTimer = setTimeout(() => {
         this.pointsVisible = true;
+        this.scheduleLeaderboard();
       }, afterMs + POINTS_DELAY_MS);
+    },
+    /**
+     * One Night: once the points badges are in, show the leaderboard as it
+     * was, add this game's points with the totals counting up, then let the
+     * rows slide into the new order.
+     */
+    scheduleLeaderboard() {
+      this.clearLeaderboardTimers();
+      const rows = this.snapshotLeaderboard;
+      if (!rows.length) return;
+      const later = (ms, step) =>
+        this.leaderboardTimers.push(setTimeout(step, ms));
+      const badges = this.snapshotPoints.filter(
+        p => p !== undefined && p !== null
+      ).length;
+      const start = badges * POINTS_STAGGER_MS + LEADERBOARD_DELAY_MS;
+      later(start, () => {
+        this.leaderboardTotals = totalsAt(rows, 0);
+        this.leaderboardPhase = 1;
+      });
+      const gainAt = start + LEADERBOARD_GAIN_DELAY_MS;
+      later(gainAt, () => {
+        this.leaderboardPhase = 2;
+      });
+      for (let step = 1; step <= LEADERBOARD_COUNT_STEPS; step++) {
+        const at =
+          gainAt + (LEADERBOARD_COUNT_MS * step) / LEADERBOARD_COUNT_STEPS;
+        later(at, () => {
+          this.leaderboardTotals = totalsAt(
+            rows,
+            step / LEADERBOARD_COUNT_STEPS
+          );
+        });
+      }
+      const reorderAt =
+        gainAt + LEADERBOARD_COUNT_MS + LEADERBOARD_REORDER_DELAY_MS;
+      later(reorderAt, () => {
+        this.leaderboardPhase = 3;
+      });
+    },
+    // rank in the standings currently on screen
+    shownRank(row) {
+      return this.leaderboardPhase === 3 ? row.rank : row.beforeRank;
+    },
+    clearLeaderboardTimers() {
+      this.leaderboardTimers.forEach(timer => clearTimeout(timer));
+      this.leaderboardTimers = [];
     },
     hasPoints(i) {
       const points = this.snapshotPoints[i];
@@ -299,6 +420,7 @@ export default {
       clearInterval(this.trueRevealInterval);
       clearTimeout(this.bluffsTimer);
       clearTimeout(this.pointsTimer);
+      this.clearLeaderboardTimers();
       clearTimeout(this.finalShakeTimer);
       clearTimeout(this.finalRevealTimer);
       this.revealedIndices = [];
@@ -308,6 +430,7 @@ export default {
       this.trueRevealIdx = 0;
       this.extrasVisible = false;
       this.pointsVisible = false;
+      this.leaderboardPhase = 0;
       const n = this.snapshotPlayers.length;
       // Read Final 3 state from snapshot
       const snap = this.session.victoryRevealSnapshot;
@@ -378,6 +501,7 @@ export default {
       clearInterval(this.trueRevealInterval);
       clearTimeout(this.bluffsTimer);
       clearTimeout(this.pointsTimer);
+      this.clearLeaderboardTimers();
       clearTimeout(this.finalShakeTimer);
       clearTimeout(this.finalRevealTimer);
       // ST clears reveal from Vuex so new joiners don't inherit a stale reveal state
@@ -702,6 +826,115 @@ export default {
     opacity: 1;
     transform: scale(1);
   }
+}
+
+.reveal-side {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  width: 30vh;
+  max-height: calc(100% - 20px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.points-rules-section,
+.leaderboard-section {
+  padding: 6px 10px 8px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 10px;
+  border: 3px solid black;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5));
+  text-align: left;
+  animation: name-appear 300ms ease both;
+
+  h3 {
+    margin: 0 0 4px;
+    text-align: center;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: normal;
+    letter-spacing: 0.05em;
+  }
+
+  .points-rules {
+    margin-top: 4px;
+    font-size: 0.75rem;
+    line-height: 1.3;
+    opacity: 0;
+    animation: bluff-appear 600ms ease-in-out both;
+
+    // the outcome that happened stands out; the other is shown for reference
+    &:not(.active) {
+      filter: grayscale(0.6) brightness(0.65);
+    }
+    &.good strong {
+      color: #7ec8ff;
+    }
+    &.evil strong {
+      color: #ff6060;
+    }
+    ul {
+      list-style: none;
+      margin: 2px 0 0;
+      padding: 0;
+    }
+    .points {
+      color: gold;
+      font-weight: bold;
+    }
+  }
+}
+
+.leaderboard-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.75rem;
+
+  li {
+    display: grid;
+    grid-template-columns: 1.6em 1fr auto 2.2em;
+    gap: 6px;
+    align-items: center;
+    line-height: 1.6;
+  }
+
+  .rank {
+    text-align: right;
+    opacity: 0.7;
+  }
+
+  .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gained {
+    color: gold;
+    font-weight: bold;
+    opacity: 0;
+    &.zero {
+      color: rgba(255, 255, 255, 0.5);
+    }
+    &.shown {
+      animation: points-pop 400ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+  }
+
+  .total {
+    text-align: right;
+    font-weight: bold;
+  }
+}
+
+// rows slide into the new order
+.leaderboard-row-move {
+  transition: transform 700ms ease-in-out;
 }
 
 .reveal-points-caption {

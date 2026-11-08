@@ -188,6 +188,10 @@
             >
               Vote history<em>[V]</em>
             </li>
+            <li v-if="session.isOneNight" @click="toggleModal('leaderboard')">
+              Leaderboard
+              <em><font-awesome-icon icon="user-friends"/></em>
+            </li>
             <li @click="leaveSession">
               Leave Session
               <em>{{ session.sessionId }}</em>
@@ -334,6 +338,7 @@ export default {
         if (this.session.isOneNight) {
           this.$store.commit("session/setOneNightVotes", null);
           this.$store.commit("session/setMarkedPlayer", -1);
+          this.$store.commit("leaderboard/startGame");
         }
         this.$store.commit("session/distributeRoles", true);
         setTimeout(

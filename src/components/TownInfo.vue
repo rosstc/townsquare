@@ -4,10 +4,6 @@
     <li class="edition one-night" v-if="session.isOneNight">
       <span class="one-night-title">One Night</span>
       <span class="one-night-subtitle">Ultimate Clocktower</span>
-      <span class="one-night-rules">
-        <span>No nominations · No private chats</span>
-        <span>Everyone votes at the end of Day 1</span>
-      </span>
     </li>
     <li
       v-else
@@ -213,19 +209,6 @@ export default {
         font-family: "Papyrus", serif;
         font-size: 150%;
         color: gold;
-      }
-
-      .one-night-rules {
-        margin-top: 6px;
-        font-size: 70%;
-        font-weight: normal;
-        opacity: 0.9;
-
-        // two fixed lines, each kept whole
-        span {
-          display: block;
-          white-space: nowrap;
-        }
       }
     }
   }
