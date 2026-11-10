@@ -29,6 +29,9 @@ const state = () => ({
   voteHistory: [],
   markedPlayer: -1,
   markedPlayers: [],
+  // bumped by Remove all (Characters) on this screen only: every token
+  // clears this browser's own good/evil mark (Player.vue)
+  alignmentResetCount: 0,
   isVoteHistoryAllowed: false,
   isRolesDistributed: false,
   isNight: false,
@@ -164,6 +167,9 @@ const mutations = {
    * Skull-mark one player (index, or -1 for none) or several (array, for a
    * tied Point Vote). markedPlayer keeps the first mark for nomination logic.
    */
+  resetSelfAlignments(state) {
+    state.alignmentResetCount++;
+  },
   setMarkedPlayer(state, val) {
     if (Array.isArray(val)) {
       state.markedPlayers = [...val];

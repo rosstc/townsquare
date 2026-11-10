@@ -101,7 +101,7 @@
             class="leaderboard-rows"
           >
             <li v-for="row in leaderboardRows" :key="row.id">
-              <span class="rank">{{ shownRank(row) }}</span>
+              <span class="rank">#{{ shownRank(row) }}</span>
               <span class="name">{{ row.name }}</span>
               <span
                 class="gained"
@@ -854,7 +854,7 @@ export default {
   h3 {
     margin: 0 0 4px;
     text-align: center;
-    font-size: 0.8rem;
+    font-size: 0.92rem;
     color: rgba(255, 255, 255, 0.8);
     font-weight: normal;
     letter-spacing: 0.05em;
@@ -893,11 +893,12 @@ export default {
   list-style: none;
   margin: 0;
   padding: 0;
-  font-size: 0.75rem;
+  font-size: 0.8625rem;
 
   li {
     display: grid;
-    grid-template-columns: 1.6em 1fr auto 2.2em;
+    // room for "#10" and a clear gap before the name
+    grid-template-columns: 2.4em 1fr auto 2.2em;
     gap: 6px;
     align-items: center;
     line-height: 1.6;
@@ -905,6 +906,7 @@ export default {
 
   .rank {
     text-align: right;
+    padding-right: 0.5em;
     opacity: 0.7;
   }
 

@@ -416,6 +416,9 @@ export default {
         Object.keys(localStorage)
           .filter(k => k.startsWith("localAlignment_"))
           .forEach(k => localStorage.removeItem(k));
+        // and from the tokens already on screen (they only read storage when
+        // they first appear); this screen only, never sent to anyone else
+        this.$store.commit("session/resetSelfAlignments");
       }
     },
     toggleNight() {

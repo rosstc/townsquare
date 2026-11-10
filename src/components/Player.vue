@@ -15,6 +15,7 @@
           'hand-raised': player.handRaised,
           'point-vote-leader': isPointVoteLeader,
           'my-vote-leader': isMyVoteTarget,
+          'my-point-vote': isMyPointVoteTarget,
           'my-secret-vote': pointVotesHidden && isMyVoteTarget,
           'vote-reveal-current': pointVoteRevealCurrent === index,
           'glow-good':
@@ -99,6 +100,12 @@
           class="vote"
           title="Hand DOWN"
           @click="vote()"
+        />
+        <!-- Point Vote: marks the player you voted for (your own vote only) -->
+        <font-awesome-icon
+          icon="times"
+          class="point-vote-target"
+          title="Your vote"
         />
         <font-awesome-icon
           icon="times-circle"
@@ -381,6 +388,17 @@ export default {
     isOwnPointVoteHand() {
       return this.myPlayerIndex === this.index;
     },
+    /**
+     * The player you pointed at in a Point Vote or Secret Point Vote. Uses
+     * your own vote directly, so it shows throughout, including during a
+     * One Night reveal. The ST doesn't vote, so never sees it.
+     */
+    isMyPointVoteTarget() {
+      const { pointVoteActive, pointVoteEnded, pointVotes } = this.session;
+      if (!pointVoteActive && !pointVoteEnded) return false;
+      if (this.myPlayerIndex < 0) return false;
+      return pointVotes[this.myPlayerIndex] === this.index;
+    },
     isMyVoteTarget() {
       if (this.myPlayerIndex < 0) return false;
       return this.visiblePointVotes[this.myPlayerIndex] === this.index;
@@ -446,6 +464,13 @@ export default {
     this.selfAlignment = localStorage.getItem(key) || null;
   },
   watch: {
+    // Remove all (Characters): this browser's own mark on the token goes too
+    "session.alignmentResetCount"() {
+      this.selfAlignment = null;
+      localStorage.removeItem(
+        `localAlignment_${this.session.playerId}_${this.player.id}`
+      );
+    },
     pointVoteBearing(newVal) {
       if (newVal === null) {
         this.displayedBearing = null;
@@ -951,7 +976,8 @@ export default {
   &.move,
   &.nominate,
   &.vote,
-  &.cancel {
+  &.cancel,
+  &.point-vote-target {
     width: 50%;
     height: 60%;
     opacity: 0;
@@ -973,7 +999,16 @@ export default {
     &.fa-eye-slash * {
       fill: rgb(21, 39, 20);
     }
+    &.point-vote-target.fa-times * {
+      fill: url(#green);
+    }
   }
+}
+
+// your Point Vote target
+.player.my-point-vote .overlay svg.point-vote-target {
+  opacity: 1;
+  transform: scale(1);
 }
 
 // other player voted yes, but is not locked yet
