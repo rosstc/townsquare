@@ -4,6 +4,7 @@ import persistence from "./persistence";
 import socket from "./socket";
 import players from "./modules/players";
 import session from "./modules/session";
+import leaderboard from "./modules/leaderboard";
 import editionJSON from "../editions.json";
 import rolesJSON from "../roles.json";
 import fabledJSON from "../fabled.json";
@@ -96,7 +97,8 @@ const customRole = {
 export default new Vuex.Store({
   modules: {
     players,
-    session
+    session,
+    leaderboard
   },
   state: {
     grimoire: {
@@ -113,6 +115,7 @@ export default new Vuex.Store({
       edition: false,
       fabled: false,
       gameState: false,
+      leaderboard: false,
       nightOrder: false,
       reference: false,
       reminder: false,

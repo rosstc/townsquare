@@ -55,7 +55,28 @@
           </span>
         </li>
       </ul>
-      <ul class="other">
+      <!-- One Night: there are no other nights, so show the rules instead -->
+      <div class="one-night-rules" v-if="session.isOneNight">
+        <div class="headline">One Night Rules</div>
+        <ul class="rules">
+          <li v-for="rule in oneNightRules" :key="rule">{{ rule }}</li>
+        </ul>
+        <div class="headline">Scoring</div>
+        <div
+          class="scoring"
+          v-for="team in ['evil', 'good']"
+          :key="team"
+          :class="team"
+        >
+          <strong>{{ team === "good" ? "Good wins" : "Evil wins" }}</strong>
+          <ul class="rules">
+            <li v-for="line in oneNightScoring[team]" :key="line.who">
+              <span class="points">+{{ line.points }}</span> {{ line.who }}
+            </li>
+          </ul>
+        </div>
+      </div>
+      <ul class="other" v-else>
         <li class="headline">Other Nights</li>
         <li
           v-for="role in rolesOtherNight"
@@ -101,11 +122,16 @@
 <script>
 import Modal from "./Modal";
 import { mapMutations, mapState } from "vuex";
+import { ONE_NIGHT_RULES, ONE_NIGHT_SCORING } from "@/utils/oneNight";
 
 export default {
   components: {
     Modal
   },
+  data: () => ({
+    oneNightRules: ONE_NIGHT_RULES,
+    oneNightScoring: ONE_NIGHT_SCORING
+  }),
   computed: {
     rolesFirstNight: function() {
       const rolesFirstNight = [];
@@ -165,7 +191,7 @@ export default {
       rolesOtherNight.sort((a, b) => a.otherNight - b.otherNight);
       return rolesOtherNight;
     },
-    ...mapState(["roles", "modals", "edition", "grimoire"]),
+    ...mapState(["roles", "modals", "edition", "grimoire", "session"]),
     ...mapState("players", ["players", "fabled"])
   },
   methods: {
@@ -359,6 +385,49 @@ ul {
     li .name {
       text-align: left;
       border-right: 0;
+    }
+  }
+}
+
+.one-night-rules {
+  max-width: 420px;
+  text-align: left;
+
+  .headline {
+    margin-bottom: 6px;
+  }
+
+  ul.rules {
+    margin: 0 0 12px;
+    font-size: 90%;
+    li {
+      display: block;
+      position: relative;
+      padding-left: 1.1em;
+      margin-bottom: 5px;
+      line-height: 1.3;
+      &:before {
+        content: "•";
+        position: absolute;
+        left: 0;
+      }
+    }
+  }
+
+  .scoring {
+    margin-left: 6px;
+    strong {
+      font-size: 90%;
+    }
+    &.good strong {
+      color: #7ec8ff;
+    }
+    &.evil strong {
+      color: #ff6060;
+    }
+    .points {
+      color: gold;
+      font-weight: bold;
     }
   }
 }

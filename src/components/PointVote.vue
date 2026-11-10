@@ -1,13 +1,37 @@
 <template>
   <div id="point-vote">
     <template v-if="session.pointVoteEnded">
-      <div class="overlay results">
-        <em class="title">Point Vote Result</em>
+      <!-- One Night: votes are revealed one voter at a time -->
+      <div class="overlay results" v-if="revealing">
+        <em class="title">Revealing the votes…</em>
         <br />
-        <template v-if="leaders.length === 0">
+        <span
+          class="summary reveal-caption"
+          :key="session.pointVoteRevealStep"
+          >{{ revealCaption }}</span
+        >
+        <span class="reveal-progress">{{ revealProgress }}</span>
+        <div class="button-group" v-if="!session.isSpectator">
+          <div class="button" @click="skipReveal">Skip</div>
+        </div>
+      </div>
+      <div
+        class="overlay results"
+        v-else
+        :class="{ compact: session.isOneNight }"
+      >
+        <em class="title">{{ voteName }} Result</em>
+        <br />
+        <template v-if="votesHidden">
+          <span class="summary"
+            >Votes are in — waiting for the Storyteller</span
+          >
+        </template>
+        <template v-else-if="leaders.length === 0">
           <span class="summary">No votes were cast.</span>
         </template>
-        <template v-else>
+        <!-- One Night: once shown, the ST reads the tallies on the tokens -->
+        <template v-else-if="!stShownVotes">
           <div
             class="result-entry"
             v-for="leaderIdx in leaders"
@@ -24,7 +48,37 @@
             >
           </div>
         </template>
-        <template v-if="!session.isSpectator">
+        <template v-if="!session.isSpectator && session.isOneNight">
+          <div class="button-group" v-if="!session.pointVoteRevealed">
+            <div class="button townsfolk" @click="revealVotes">Show Votes</div>
+            <div class="button demon" @click="closeResults">Close</div>
+          </div>
+          <template v-else>
+            <span class="suggestion" :class="suggestedTeam">
+              {{ suggestionText }}
+            </span>
+            <div class="button-group small">
+              <div
+                class="button"
+                :class="{ disabled: leadersExecuted }"
+                v-if="leaders.length"
+                @click="executeLeaders"
+              >
+                Execute
+              </div>
+              <div class="button demon" @click="closeResults">Close</div>
+            </div>
+            <div class="button-group small">
+              <div class="button townsfolk" @click="openVictory('good')">
+                Good Wins
+              </div>
+              <div class="button demon" @click="openVictory('evil')">
+                Evil Wins
+              </div>
+            </div>
+          </template>
+        </template>
+        <template v-else-if="!session.isSpectator">
           <div class="button-group">
             <div
               class="button"
@@ -42,7 +96,7 @@
     </template>
     <template v-else>
       <div class="overlay">
-        <em class="title">Point Vote</em>
+        <em class="title">{{ voteName }}</em>
         <br />
         <span class="summary">{{ centerText }}</span>
         <template v-if="!session.isSpectator">
@@ -76,17 +130,73 @@
 
 <script>
 import { mapGetters, mapState } from "vuex";
+import { suggestedWinner, clockwiseVoteRevealOrder } from "@/utils/oneNight";
+
+// One Night vote reveal pacing
+const REVEAL_INTRO_MS = 1650;
+const REVEAL_STEP_MS = 1320;
+const REVEAL_RESULT_PAUSE_MS = 1980;
 
 export default {
   computed: {
     ...mapState("players", ["players"]),
     ...mapState(["session", "grimoire"]),
-    ...mapGetters({ leaders: "session/pointVoteLeaders" }),
+    ...mapGetters({
+      leaders: "session/pointVoteLeaders",
+      votesHidden: "session/pointVotesHidden",
+      voterIndices: "session/pointVoteVoterIndices",
+      revealing: "session/pointVoteRevealing",
+      voteName: "session/pointVoteName"
+    }),
+    revealCaption() {
+      const {
+        pointVoteRevealOrder,
+        pointVoteRevealStep,
+        pointVotes
+      } = this.session;
+      if (pointVoteRevealStep < 1) return "…";
+      const voter = pointVoteRevealOrder[pointVoteRevealStep - 1];
+      const name = this.players[voter] ? this.players[voter].name : "?";
+      const target = pointVotes[voter];
+      if (target === undefined || target === null) return `${name} didn't vote`;
+      if (target === voter) return `${name} voted for themselves`;
+      const targetName = this.players[target] ? this.players[target].name : "?";
+      return `${name} → ${targetName}`;
+    },
+    revealProgress() {
+      const total = this.session.pointVoteRevealOrder.length;
+      return `${Math.min(this.session.pointVoteRevealStep, total)} / ${total}`;
+    },
     centerText() {
+      if (this.votesHidden) {
+        const voted = this.voterIndices.length;
+        // only seated players can vote
+        const seated = this.players.filter(p => p.id).length;
+        return `Secret Vote — ${voted} of ${seated} voted`;
+      }
       if (this.leaders.length === 0) return "No votes yet";
       const names = this.leaders.map(i => this.players[i].name).join(", ");
       const count = this.leaderVoteCount;
       return `Highest Vote is for player ${names}. Vote Tally ${count}`;
+    },
+    // One Night: the ST has shown the votes to the town
+    stShownVotes() {
+      return (
+        !this.session.isSpectator &&
+        this.session.isOneNight &&
+        this.session.pointVoteRevealed
+      );
+    },
+    suggestedTeam() {
+      return suggestedWinner(this.players, this.leaders);
+    },
+    suggestionText() {
+      return this.suggestedTeam === "good"
+        ? "Suggested: Good wins — a Minion or Demon was executed"
+        : "Suggested: Evil wins — no Minion or Demon executed";
+    },
+    leadersExecuted() {
+      return this.leaders.every(i => this.players[i] && this.players[i].isDead);
     },
     leaderVoteCount() {
       if (this.leaders.length === 0) return 0;
@@ -95,12 +205,40 @@ export default {
       ).length;
     }
   },
+  created() {
+    this.revealTimer = null;
+    this.countdownTimer = null;
+  },
+  beforeDestroy() {
+    clearTimeout(this.revealTimer);
+    // a vote closed during the 3-2-1 must not come back when it finishes
+    clearTimeout(this.countdownTimer);
+  },
   watch: {
+    // One Night: every client plays the reveal on its own timer
+    "session.pointVoteRevealCount"() {
+      this.playReveal();
+    },
     "session.pointVoteCountdown"(val) {
       if (val && !this.session.isSpectator) {
-        setTimeout(() => {
-          this.$store.commit("session/setPointVoteActive", false);
+        clearTimeout(this.countdownTimer);
+        this.countdownTimer = setTimeout(() => {
+          // One Night: keep the locked votes for scoring on the victory screen
+          if (this.session.isOneNight) {
+            this.$store.commit(
+              "session/setOneNightVotes",
+              this.session.pointVotes
+            );
+          }
+          // Show the results before closing the vote: players get these as two
+          // messages, and closing first briefly hides the panel in between.
           this.$store.commit("session/setPointVoteEnded", true);
+          this.$store.commit("session/setPointVoteActive", false);
+          // One Night: skull every player about to be executed, ties included.
+          // Players only see these once the ST shows the votes.
+          if (this.session.isOneNight && this.leaders.length) {
+            this.$store.commit("session/setMarkedPlayer", [...this.leaders]);
+          }
         }, 4000);
       }
     }
@@ -126,6 +264,49 @@ export default {
     },
     clearMark() {
       this.$store.commit("session/setMarkedPlayer", -1);
+    },
+    revealVotes() {
+      const order = clockwiseVoteRevealOrder(
+        this.players,
+        this.session.pointVotes
+      );
+      this.$store.commit("session/startPointVoteReveal", order);
+    },
+    skipReveal() {
+      this.$store.commit("session/skipPointVoteReveal");
+    },
+    playReveal() {
+      clearTimeout(this.revealTimer);
+      const advance = () => {
+        const total = this.session.pointVoteRevealOrder.length;
+        const step = this.session.pointVoteRevealStep;
+        // already at the result (finished, or skipped by the ST)
+        if (step > total) return;
+        this.$store.commit("session/setPointVoteRevealStep", step + 1);
+        if (step + 1 <= total) {
+          const delay =
+            step + 1 === total ? REVEAL_RESULT_PAUSE_MS : REVEAL_STEP_MS;
+          this.revealTimer = setTimeout(advance, delay);
+        }
+      };
+      this.revealTimer = setTimeout(advance, REVEAL_INTRO_MS);
+    },
+    /**
+     * One Night: every top-voted player is executed, ties included.
+     */
+    executeLeaders() {
+      this.leaders.forEach(i => {
+        const player = this.players[i];
+        if (!player || player.isDead) return;
+        this.$store.commit("players/update", {
+          player,
+          property: "isDead",
+          value: true
+        });
+      });
+    },
+    openVictory(team) {
+      this.$store.commit("session/setVictoryModalTeam", team);
     },
     closeResults() {
       this.$store.commit("session/addPointVoteHistory", this.players);
@@ -167,6 +348,28 @@ export default {
     font-size: 85%;
     line-height: 1.4;
   }
+
+  .reveal-caption {
+    font-size: 120%;
+    font-weight: bold;
+    animation: reveal-caption-in 400ms ease-out;
+  }
+
+  .reveal-progress {
+    font-size: 75%;
+    opacity: 0.7;
+  }
+
+  .suggestion {
+    font-size: 75%;
+    line-height: 1.3;
+    &.good {
+      color: #7ec8ff;
+    }
+    &.evil {
+      color: #ff6060;
+    }
+  }
 }
 
 .overlay {
@@ -184,6 +387,15 @@ export default {
     margin-bottom: 4px;
   }
 
+  // One Night: everyone votes, so leave room for long voter lists
+  &.compact .result-entry {
+    font-size: 68%;
+  }
+
+  .button-group.small {
+    font-size: 80%;
+  }
+
   .result-name {
     font-weight: bold;
     font-size: 130%;
@@ -198,6 +410,17 @@ export default {
     font-size: 78%;
     opacity: 0.85;
     line-height: 1.3;
+  }
+}
+
+@keyframes reveal-caption-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

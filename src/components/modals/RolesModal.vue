@@ -9,7 +9,7 @@
       <ul class="tokens" v-for="(teamRoles, team) in roleSelection" :key="team">
         <li class="count" :class="[team]">
           {{ teamRoles.reduce((a, { selected }) => a + selected, 0) }} /
-          {{ game[nonTravelers - 5][team] }}
+          {{ composition[team] }}
         </li>
         <li
           v-for="role in teamRoles"
@@ -67,6 +67,7 @@
 <script>
 import Modal from "./Modal";
 import gameJSON from "./../../game";
+import { oneNightComposition } from "@/utils/oneNight";
 import Token from "./../Token";
 import { mapGetters, mapMutations, mapState } from "vuex";
 
@@ -95,7 +96,11 @@ export default {
         roles.some(role => role.selected && role.setup)
       );
     },
-    ...mapState(["roles", "modals"]),
+    composition: function() {
+      const base = this.game[Math.max(5, this.nonTravelers) - 5];
+      return this.session.isOneNight ? oneNightComposition(base) : base;
+    },
+    ...mapState(["roles", "modals", "session"]),
     ...mapState("players", ["players"]),
     ...mapGetters({ nonTravelers: "players/nonTravelers" })
   },
@@ -110,8 +115,7 @@ export default {
         this.$set(role, "selected", 0);
       });
       delete this.roleSelection["traveler"];
-      const playerCount = Math.max(5, this.nonTravelers);
-      const composition = this.game[playerCount - 5];
+      const composition = this.composition;
       Object.keys(composition).forEach(team => {
         for (let x = 0; x < composition[team]; x++) {
           if (this.roleSelection[team]) {

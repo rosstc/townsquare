@@ -54,6 +54,7 @@
     <ReferenceModal />
     <NightOrderModal />
     <VoteHistoryModal />
+    <LeaderboardModal />
     <GameStateModal />
     <Gradients />
     <VictoryCelebration />
@@ -79,6 +80,7 @@ import Gradients from "./components/Gradients";
 import NightOrderModal from "./components/modals/NightOrderModal";
 import FabledModal from "@/components/modals/FabledModal";
 import VoteHistoryModal from "@/components/modals/VoteHistoryModal";
+import LeaderboardModal from "@/components/modals/LeaderboardModal";
 import GameStateModal from "@/components/modals/GameStateModal";
 import VictoryCelebration from "./components/VictoryCelebration";
 import VictoryModal from "./components/VictoryModal";
@@ -91,6 +93,7 @@ export default {
   components: {
     GameStateModal,
     VoteHistoryModal,
+    LeaderboardModal,
     VictoryCelebration,
     VictoryModal,
     VictoryReveal,
@@ -161,6 +164,7 @@ export default {
           break;
         case "h":
           if (this.session.isSpectator) return;
+          if (this.session.isOneNight) return;
           this.$refs.menu.toggleHiddenVoting();
           break;
         case "t":

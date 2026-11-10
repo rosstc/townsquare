@@ -1,6 +1,12 @@
 <template>
   <ul class="info">
+    <!-- One Night mode replaces the script logo; the script name stays below -->
+    <li class="edition one-night" v-if="session.isOneNight">
+      <span class="one-night-title">One Night</span>
+      <span class="one-night-subtitle">Ultimate Clocktower</span>
+    </li>
     <li
+      v-else
       class="edition"
       :class="['edition-' + edition.id]"
       :style="{
@@ -15,7 +21,8 @@
       Please add more players!
     </li>
     <li>
-      <span class="meta" v-if="!edition.isOfficial">
+      <!-- the One Night banner hides the logo, so name official scripts too -->
+      <span class="meta" v-if="!edition.isOfficial || session.isOneNight">
         {{ edition.name }}
         {{ edition.author ? "by " + edition.author : "" }}
       </span>
@@ -78,6 +85,7 @@
 <script>
 import gameJSON from "./../game";
 import { mapState } from "vuex";
+import { oneNightComposition } from "@/utils/oneNight";
 
 export default {
   computed: {
@@ -85,8 +93,9 @@ export default {
       const { players } = this.$store.state.players;
       const nonTravelers = this.$store.getters["players/nonTravelers"];
       const alive = players.filter(player => player.isDead !== true).length;
+      const base = gameJSON[nonTravelers - 5];
       return {
-        ...gameJSON[nonTravelers - 5],
+        ...(this.session.isOneNight ? oneNightComposition(base) : base),
         traveler: players.length - nonTravelers,
         alive,
         votes:
@@ -179,6 +188,29 @@ export default {
     background-size: 100% auto;
     position: absolute;
     top: -25%;
+
+    &.one-night {
+      flex-direction: column;
+      flex-wrap: nowrap;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      line-height: 1.1;
+      // lift the banner clear of the script name line below it
+      transform: translateY(-50px);
+
+      .one-night-title {
+        font-family: "Papyrus", serif;
+        font-size: 260%;
+        color: gold;
+      }
+
+      .one-night-subtitle {
+        font-family: "Papyrus", serif;
+        font-size: 150%;
+        color: gold;
+      }
+    }
   }
 }
 </style>
