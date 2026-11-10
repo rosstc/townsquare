@@ -90,7 +90,8 @@ import { effectiveAlignment } from "@/utils/alignment";
 import {
   oneNightPoints,
   oneNightRevealOrder,
-  leaderboardRevealRows
+  leaderboardRevealRows,
+  leaderboardKey
 } from "@/utils/oneNight";
 
 export default {
@@ -156,15 +157,17 @@ export default {
       });
     },
     /**
-     * This game's points keyed by each player's browser, for the leaderboard.
-     * Unclaimed seats and players without an alignment don't score.
+     * This game's points for the leaderboard, keyed by leaderboardKey.
+     * Unseated players score under their seat name; nameless seats and
+     * players without an alignment don't score.
      */
     leaderboardScores() {
       const scores = {};
       this.players.forEach((player, i) => {
         const points = this.points[i];
-        if (!player.id || points === null || points === undefined) return;
-        scores[player.id] = { name: player.name, points };
+        const key = leaderboardKey(player);
+        if (!key || points === null || points === undefined) return;
+        scores[key] = { name: player.name, points };
       });
       return scores;
     },
@@ -547,10 +550,16 @@ export default {
       const angle = ((2 * Math.PI) / n) * i - Math.PI / 2;
       // Tighter radius than the full-screen reveal so tokens fit inside the modal
       const radius = Math.min(37, Math.max(21, n * 2.5));
-      const x = Math.cos(angle) * radius;
-      const y = Math.sin(angle) * radius;
+      // Never wider or taller than the token area (cqw/cqh: its width and
+      // height), leaving room for a card (~104px wide, ~150px tall), so the
+      // buttons stay on screen in shorter windows. A squat area gives an oval.
+      const rx = `min(${radius}vh, max(calc(50cqw - 56px), 60px))`;
+      const ry = `min(${radius}vh, max(calc(50cqh - 80px), 40px))`;
+      const round = value => Math.round(value * 10000) / 10000;
+      const x = round(Math.cos(angle));
+      const y = round(Math.sin(angle));
       return {
-        transform: `translate(calc(-50% + ${x}vh), calc(-50% + ${y}vh))`
+        transform: `translate(calc(-50% + ${x} * ${rx}), calc(-50% + ${y} * ${ry}))`
       };
     },
     effectiveAlignment
@@ -576,7 +585,9 @@ export default {
   border-radius: 16px;
   padding: 28px 32px 24px;
   width: min(92vw, 1132px);
-  max-height: 88vh;
+  // a fixed height lets the token area take whatever is left after the
+  // title and buttons, so the buttons are never pushed off screen
+  height: min(calc(100vh - 32px), 960px);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -637,9 +648,11 @@ export default {
 
 .player-grid {
   position: relative;
-  flex: 1;
-  min-height: 63vh;
+  flex: 1 1 0;
+  min-height: 0;
   width: 100%;
+  // tokens size their circle to this area (cqw / cqh in playerPosition)
+  container-type: size;
 }
 
 .player-card {
@@ -832,6 +845,7 @@ export default {
 }
 
 .modal-actions {
+  flex-shrink: 0;
   display: flex;
   gap: 12px;
   justify-content: center;

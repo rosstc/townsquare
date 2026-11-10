@@ -87,7 +87,9 @@ const isDemon = player => !!player.role && player.role.team === "demon";
  * (the executed, or anyone killed during the day). One random living good
  * player joins the group if no evil player is left alive, or if the only
  * death was a single evil Minion or Demon, so the final reveal still has
- * suspense. Everyone else is revealed first, in random order.
+ * suspense. If nobody died (rare), the group is the Demon, one other random
+ * evil player and one random good player. Everyone else is revealed first,
+ * in random order.
  *
  * @param players snapshot players ({ role, alignment, isDead })
  * @param random RNG, injectable for tests
@@ -104,7 +106,20 @@ export function oneNightRevealOrder(players, random = Math.random) {
   const deaths = indices.filter(i => players[i].isDead);
   const singleEvilDeath =
     deaths.length === 1 && isEvilMinionOrDemon(players[deaths[0]]);
-  if (!aliveEvil || singleEvilDeath) {
+  const pickOne = alignment => {
+    const candidates = indices.filter(
+      i => !group.includes(i) && effectiveAlignment(players[i]) === alignment
+    );
+    if (candidates.length) group.push(shuffle(candidates, random)[0]);
+  };
+  if (!deaths.length) {
+    // nobody died: the Demon, one other evil player and one good player
+    // (with no Demon either, there's nothing to build on: standard order)
+    if (group.length) {
+      pickOne("evil");
+      pickOne("good");
+    }
+  } else if (!aliveEvil || singleEvilDeath) {
     const aliveGood = indices.filter(
       i =>
         !group.includes(i) &&
@@ -174,6 +189,19 @@ export const ONE_NIGHT_SCORING = {
     { points: 1, who: "Every other good player" }
   ]
 };
+
+/**
+ * Who a player is on the session leaderboard. Seated players are tracked by
+ * the browser that claimed their seat, so they keep their score through seat
+ * moves and renames. Players without a seat (no browser of their own) still
+ * score, tracked by their seat name. A seat with no name has nobody to track.
+ *
+ * @returns {string} the key, or "" when the player can't be tracked
+ */
+export function leaderboardKey(player) {
+  if (player.id) return player.id;
+  return player.name ? `name:${player.name}` : "";
+}
 
 /**
  * Running totals for the session leaderboard, highest first.
