@@ -32,6 +32,8 @@ const state = () => ({
   // bumped by Remove all (Characters) on this screen only: every token
   // clears this browser's own good/evil mark (Player.vue)
   alignmentResetCount: 0,
+  // a short message in the centre of the town (TownNotice.vue), this screen only
+  notice: null,
   isVoteHistoryAllowed: false,
   isRolesDistributed: false,
   isNight: false,
@@ -167,6 +169,14 @@ const mutations = {
    * Skull-mark one player (index, or -1 for none) or several (array, for a
    * tied Point Vote). markedPlayer keeps the first mark for nomination logic.
    */
+  /**
+   * ST: a Rerack. Changes no state here; socket.js tells every player to
+   * clear their screen.
+   */
+  startRerack() {},
+  showNotice(state, text) {
+    state.notice = { text, id: Date.now() + Math.random() };
+  },
   resetSelfAlignments(state) {
     state.alignmentResetCount++;
   },

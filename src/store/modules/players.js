@@ -92,6 +92,21 @@ const actions = {
     }
     commit("set", players);
     commit("setBluff");
+  },
+  /**
+   * Rerack (ST): every seat back to blank for the next game, Travellers
+   * included. Players keep their seats, names and pronouns; Fabled & Loric
+   * stay (unlike Remove all); Demon bluffs are cleared.
+   */
+  rerack({ state, commit }) {
+    const players = state.players.map(({ name, id, pronouns }) => ({
+      ...NEWPLAYER,
+      name,
+      id,
+      pronouns
+    }));
+    commit("set", players);
+    commit("setBluff");
   }
 };
 

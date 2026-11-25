@@ -204,8 +204,24 @@ export function leaderboardKey(player) {
 }
 
 /**
+ * Ranks for rows already sorted highest first. Tied scores share a rank and
+ * the next score takes the next number, with no gaps:
+ * 6, 6, 3, 3, 0 → 1, 1, 2, 2, 3.
+ *
+ * @returns {number[]} one rank per row, in the same order
+ */
+const rankBy = (sorted, scoreOf) => {
+  let rank = 0;
+  return sorted.map((row, i) => {
+    if (i === 0 || scoreOf(row) !== scoreOf(sorted[i - 1])) rank++;
+    return rank;
+  });
+};
+
+/**
  * Running totals for the session leaderboard, highest first.
- * Tied players share a rank (1, 1, 3); ties are listed by name. Each player
+ * Tied players share a rank, with no gaps (1, 1, 2); ties are listed by
+ * name. Each player
  * shows the most recent name they played under.
  *
  * @param games leaderboard games ({ id, scores: { [playerId]: { name, points } } })
@@ -227,9 +243,8 @@ export function leaderboardStandings(games) {
   const rows = Object.values(byPlayer).sort(
     (a, b) => b.total - a.total || String(a.name).localeCompare(b.name)
   );
-  rows.forEach((row, i) => {
-    const previous = rows[i - 1];
-    row.rank = previous && previous.total === row.total ? previous.rank : i + 1;
+  rankBy(rows, row => row.total).forEach((rank, i) => {
+    rows[i].rank = rank;
   });
   return rows;
 }
@@ -259,14 +274,11 @@ export function leaderboardRevealRows(games, gameId) {
     };
   });
   // rank the earlier standings too, new players included at 0
-  [...rows]
-    .sort((a, b) => b.before - a.before || String(a.name).localeCompare(b.name))
-    .forEach((row, i, sorted) => {
-      const previous = sorted[i - 1];
-      row.beforeRank =
-        previous && previous.before === row.before
-          ? previous.beforeRank
-          : i + 1;
-    });
+  const byBefore = [...rows].sort(
+    (a, b) => b.before - a.before || String(a.name).localeCompare(b.name)
+  );
+  rankBy(byBefore, row => row.before).forEach((rank, i) => {
+    byBefore[i].beforeRank = rank;
+  });
   return rows;
 }

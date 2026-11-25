@@ -46,16 +46,32 @@
       >
       on how to write a custom character definition file.
       <b>Only load custom JSON files from sources that you trust!</b>
-      <h3>Some popular custom scripts:</h3>
-      <ul class="scripts">
-        <li
-          v-for="(script, index) in scripts"
-          :key="index"
-          @click="handleURL(script[1])"
-        >
-          {{ script[0] }}
-        </li>
-      </ul>
+      <div class="script-columns">
+        <div class="script-column">
+          <h3>Some popular custom scripts:</h3>
+          <ul class="scripts">
+            <li
+              v-for="(script, index) in scripts"
+              :key="index"
+              @click="handleURL(script[1])"
+            >
+              {{ script[0] }}
+            </li>
+          </ul>
+        </div>
+        <div class="script-column">
+          <h3>One Night Ultimate scripts:</h3>
+          <ul class="scripts">
+            <li
+              v-for="(script, index) in oneNightScripts"
+              :key="index"
+              @click="handleURL(script[1])"
+            >
+              {{ script[0] }}
+            </li>
+          </ul>
+        </div>
+      </div>
       <input
         type="file"
         ref="upload"
@@ -121,6 +137,17 @@ export default {
         [
           "Murder by Death",
           "https://gist.githubusercontent.com/LukeC82/04789e52b4055d1dc07275bb81a1311c/raw/53a50a39bac097f2005fb264cfa19fe5cc856292/Murder_by_Death_v1.json"
+        ]
+      ],
+      // scripts for the One Night Clocktower mode
+      oneNightScripts: [
+        [
+          "One Night Ultimate Carl",
+          "https://gist.githubusercontent.com/LukeC82/5aa733cb431dd1a8364e58023c880a11/raw/80a6b14ed94e2a9a53ea67478d349eb228c56ef5/One_Night_Ultimate_Carl_5_2_4.json"
+        ],
+        [
+          "One Night Ultimate Carl Extreme",
+          "https://gist.githubusercontent.com/LukeC82/ec5bbf29205ba013e289cecf7596bd88/raw/dd904ed62a3f9502b411911c9b191095ad2b43de/One_Night_Ultimate_Carl_Extreme.json"
         ]
       ]
     };
@@ -229,14 +256,25 @@ ul.editions .edition {
   input[type="file"] {
     display: none;
   }
+  // two lists side by side; they stack on narrow screens
+  .script-columns {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0 40px;
+  }
+  .script-column {
+    flex: 1 1 260px;
+    max-width: 420px;
+  }
   .scripts {
     list-style-type: disc;
     font-size: 120%;
     cursor: pointer;
     display: block;
-    width: 50%;
     text-align: left;
-    margin: 10px auto;
+    margin: 10px 0;
+    padding-left: 1.2em;
     li:hover {
       color: red;
     }

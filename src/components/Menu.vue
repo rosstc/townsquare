@@ -102,10 +102,14 @@
               <font-awesome-icon
                 :icon="[
                   'fas',
-                  session.isNightOrder ? 'check-square' : 'square'
+                  grimoire.isNightOrder ? 'check-square' : 'square'
                 ]"
               />
             </em>
+          </li>
+          <li v-if="!session.isSpectator && players.length" @click="rerack">
+            Rerack
+            <em><font-awesome-icon icon="redo-alt"/></em>
           </li>
           <li v-if="players.length">
             Zoom
@@ -120,34 +124,6 @@
                 icon="search-plus"
               />
             </em>
-          </li>
-          <li @click="setBackground">
-            Background image
-            <em><font-awesome-icon icon="image"/></em>
-          </li>
-          <li v-if="!edition.isOfficial" @click="imageOptIn">
-            <small>Show Custom Images</small>
-            <em
-              ><font-awesome-icon
-                :icon="[
-                  'fas',
-                  grimoire.isImageOptIn ? 'check-square' : 'square'
-                ]"
-            /></em>
-          </li>
-          <li @click="toggleStatic">
-            Disable Animations
-            <em
-              ><font-awesome-icon
-                :icon="['fas', grimoire.isStatic ? 'check-square' : 'square']"
-            /></em>
-          </li>
-          <li @click="toggleMuted">
-            Mute Sounds
-            <em
-              ><font-awesome-icon
-                :icon="['fas', grimoire.isMuted ? 'volume-mute' : 'volume-up']"
-            /></em>
           </li>
         </template>
 
@@ -231,6 +207,14 @@
             Add Fabled & Loric
             <em><font-awesome-icon icon="dragon"/></em>
           </li>
+          <li @click="toggleModal('reference')">
+            Reference Sheet
+            <em>[R]</em>
+          </li>
+          <li @click="toggleModal('nightOrder')">
+            Night Order Sheet
+            <em>[N]</em>
+          </li>
           <li @click="clearRoles" v-if="players.length">
             Remove all
             <em><font-awesome-icon icon="trash-alt"/></em>
@@ -240,13 +224,33 @@
         <template v-if="tab === 'help'">
           <!-- Help -->
           <li class="headline">Help</li>
-          <li @click="toggleModal('reference')">
-            Reference Sheet
-            <em>[R]</em>
+          <li @click="setBackground">
+            Background image
+            <em><font-awesome-icon icon="image"/></em>
           </li>
-          <li @click="toggleModal('nightOrder')">
-            Night Order Sheet
-            <em>[N]</em>
+          <li v-if="!edition.isOfficial" @click="imageOptIn">
+            <small>Show Custom Images</small>
+            <em
+              ><font-awesome-icon
+                :icon="[
+                  'fas',
+                  grimoire.isImageOptIn ? 'check-square' : 'square'
+                ]"
+            /></em>
+          </li>
+          <li @click="toggleStatic">
+            Disable Animations
+            <em
+              ><font-awesome-icon
+                :icon="['fas', grimoire.isStatic ? 'check-square' : 'square']"
+            /></em>
+          </li>
+          <li @click="toggleMuted">
+            Mute Sounds
+            <em
+              ><font-awesome-icon
+                :icon="['fas', grimoire.isMuted ? 'volume-mute' : 'volume-up']"
+            /></em>
           </li>
           <li @click="toggleModal('gameState')">
             Game State JSON
@@ -490,6 +494,54 @@ export default {
         }
         this.$store.commit("session/toggleOneNight", true);
       }
+    },
+    /**
+     * Rerack (ST): close the last game and reset the town for the next one.
+     * Players stay seated and Fabled & Loric stay; Send Characters still
+     * starts the next game.
+     */
+    rerack() {
+      if (this.session.isSpectator) return;
+      if (
+        !confirm(
+          "Rerack the town? This clears every character, reminder, " +
+            "alignment, death and mark, for you and every seated player. " +
+            "Fabled & Loric stay, and players stay seated in a shuffled order."
+        )
+      ) {
+        return;
+      }
+      const { commit, dispatch } = this.$store;
+      // close anything still running from the last game
+      if (this.session.nomination) commit("session/nomination");
+      this.closePointVote();
+      commit("session/setPointVotes", {});
+      commit("session/setVictoryModalTeam", null);
+      commit("session/clearVictory");
+      commit("session/clearVictoryReveal");
+      // every seat back to blank and shuffled, no skull marks or saved votes
+      dispatch("players/rerack");
+      dispatch("players/randomize");
+      commit("session/setMarkedPlayer", -1);
+      commit("session/setOneNightVotes", null);
+      // back to Day, without Hide Voting, with a fresh vote history
+      if (this.session.isHiddenVoting) {
+        commit("session/toggleHiddenVoting", false);
+      }
+      if (this.session.isNight) commit("session/toggleNight", false);
+      commit("session/clearVoteHistory");
+      // tell every seated player to clear their own character and notes
+      commit("session/startRerack");
+      // next step: choose the new characters (that window needs 5 players)
+      if (this.$store.getters["players/nonTravelers"] >= 5) {
+        if (!this.$store.state.modals.roles) this.toggleModal("roles");
+      } else {
+        commit(
+          "session/showNotice",
+          "Town reset. Choose characters, then Send Characters."
+        );
+      }
+      this.toggleMenu();
     },
     closePointVote() {
       if (this.session.pointVoteActive) {

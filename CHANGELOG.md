@@ -3,6 +3,15 @@
 - Add a set of emotes that come from a players seated position
 -- probably disable emotes during an active votes/other important activites
 
+### Version 3.1.2
+- Add a quick re-rack button.
+- Include the 2 known One Night Ultimate Clocktower scripts into the scripts menu:
+-- One_Night_Ultimate_Carl_Extreme.json
+-- One_Night_Ultimate_Carl_5_2_4.json
+- Fixed the "Night Order" menu item not showing a tick when on.
+- Re-organised the menu's
+- 
+
 ### Version 3.1.1
 - Added robust scoring system for One Night Ultimate Clocktower.
 
@@ -184,7 +193,7 @@
 - Added jinx's for the Ojo
 - Added simple reminders for the Riot
 - Gong sound - added a pre-load statment to the first use of the sound sync's with the animation
-- Updated the custome script list & basic instructions about the github gist.
+- Updated the custom script list & basic instructions about the github gist.
 
 ### Version 2.17.5
  - Added the 'Ojo' Demon.

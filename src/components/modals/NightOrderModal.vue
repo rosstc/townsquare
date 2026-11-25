@@ -392,6 +392,7 @@ ul {
 .one-night-rules {
   max-width: 420px;
   text-align: left;
+  font-size: 90%;
 
   .headline {
     margin-bottom: 6px;

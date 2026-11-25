@@ -47,6 +47,7 @@
       ></PointVote>
     </transition>
     <TownSquare></TownSquare>
+    <TownNotice />
     <Menu ref="menu"></Menu>
     <EditionModal />
     <FabledModal />
@@ -69,6 +70,7 @@ import { mapState } from "vuex";
 import { version } from "../package.json";
 import TownSquare from "./components/TownSquare";
 import TownInfo from "./components/TownInfo";
+import TownNotice from "./components/TownNotice";
 import Menu from "./components/Menu";
 import RolesModal from "./components/modals/RolesModal";
 import EditionModal from "./components/modals/EditionModal";
@@ -104,6 +106,7 @@ export default {
     ReferenceModal,
     Intro,
     TownInfo,
+    TownNotice,
     TownSquare,
     Menu,
     EditionModal,

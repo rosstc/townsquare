@@ -280,6 +280,9 @@ export class LiveSession {
         this._store.commit("session/startPointVoteReveal", order);
         break;
       }
+      case "rerack":
+        this._applyRerack();
+        break;
       case "leaderboard":
         if (!this._isSpectator) return;
         this._store.commit("leaderboard/receive", params);
@@ -622,6 +625,26 @@ export class LiveSession {
         this._store.commit("session/clearVictoryReveal");
       }
     }
+  }
+
+  /**
+   * Players: the ST is reracking. Clear this screen for the next game, the
+   * same as their own Remove all: their own character, and the characters,
+   * reminders and good/evil marks they placed as notes. Travellers stay
+   * (they come from the ST); deaths, ghost votes and raised hands come from
+   * the ST's update. A player who missed it uses Remove all, as usual.
+   * @private
+   */
+  _applyRerack() {
+    if (!this._isSpectator) return;
+    this._store.dispatch("players/clearRoles");
+    this._store.commit("session/resetSelfAlignments");
+    // close the victory celebration from the last game
+    this._store.commit("session/clearVictory");
+    this._store.commit(
+      "session/showNotice",
+      "The Storyteller is reracking for a new game!"
+    );
   }
 
   /**
@@ -1251,6 +1274,15 @@ export class LiveSession {
   }
 
   /**
+   * Rerack: tell every player to clear their screen for the next game.
+   * ST only.
+   */
+  sendRerack() {
+    if (this._isSpectator) return;
+    this._send("rerack");
+  }
+
+  /**
    * Send the One Night session leaderboard to every player. ST only.
    */
   sendLeaderboard() {
@@ -1394,6 +1426,9 @@ export default store => {
         break;
       case "leaderboard/requestCopies":
         session.requestLeaderboardCopies();
+        break;
+      case "session/startRerack":
+        session.sendRerack();
         break;
       case "setEdition":
         session.sendEdition();
